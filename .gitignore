@@ -7,3 +7,5 @@ frontend/dist/
 
 .vscode/
 .DS_Store
+
+frontend/.env
