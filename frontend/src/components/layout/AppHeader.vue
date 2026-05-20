@@ -1,9 +1,19 @@
 <script setup lang="ts">
-import { RouterLink, useRouter } from 'vue-router'
+import { computed } from 'vue'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../../services/auth'
 
+const route = useRoute()
 const router = useRouter()
 const { authState, isLoggedIn, logoutUser } = useAuth()
+
+const userInitial = computed(() => {
+  return authState.user?.name?.trim()?.charAt(0)?.toUpperCase() || 'U'
+})
+
+function isActive(path: string) {
+  return route.path === path
+}
 
 function handleLogout() {
   logoutUser()
@@ -14,75 +24,102 @@ function handleLogout() {
 <template>
   <header class="header">
     <div class="header__inner">
-      <div class="header__brand">
-        <p class="header__tag">MediaCompass</p>
-        <h1 class="header__title">Навігація у цифровому контенті</h1>
-      </div>
+      <RouterLink to="/" class="header__brand">
+        <div class="header__logo-mark">
+          <span class="header__logo-dot"></span>
+        </div>
+        <span class="header__brand-text">MediaCompass</span>
+      </RouterLink>
 
       <nav class="header__nav">
-        <RouterLink to="/" class="header__link" active-class="header__link--active">
-          Головна
+        <RouterLink
+          to="/"
+          class="header__nav-link"
+          :class="{ 'header__nav-link--active': isActive('/') }"
+        >
+          Home
         </RouterLink>
 
         <RouterLink
           to="/catalog"
-          class="header__link"
-          active-class="header__link--active"
+          class="header__nav-link"
+          :class="{ 'header__nav-link--active': isActive('/catalog') }"
         >
-          Каталог
+          Catalog
         </RouterLink>
 
         <RouterLink
           to="/recommendations"
-          class="header__link"
-          active-class="header__link--active"
+          class="header__nav-link"
+          :class="{ 'header__nav-link--active': isActive('/recommendations') }"
         >
-          Рекомендації
+          Recommendations
         </RouterLink>
 
         <RouterLink
           to="/forum"
-          class="header__link"
-          active-class="header__link--active"
+          class="header__nav-link"
+          :class="{ 'header__nav-link--active': isActive('/forum') }"
         >
-          Форум
+          Forum
         </RouterLink>
       </nav>
 
       <div class="header__actions">
-        <input
-          type="text"
-          class="header__search"
-          placeholder="Глобальний пошук (заглушка)"
-        />
+        <label class="header__search">
+          <svg class="header__search-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M10.5 18a7.5 7.5 0 1 1 5.303-2.197L21 21"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+            />
+          </svg>
+
+          <input type="text" placeholder="Search title, author..." />
+        </label>
+
+        <button class="header__icon-button" type="button" aria-label="Notifications">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path
+              d="M15 17H5.5a1 1 0 0 1-.8-1.6L6 13.5V10a6 6 0 1 1 12 0v3.5l1.3 1.9a1 1 0 0 1-.8 1.6H18"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+            />
+            <path
+              d="M10 19a2 2 0 0 0 4 0"
+              fill="none"
+              stroke="currentColor"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-width="1.8"
+            />
+          </svg>
+        </button>
 
         <template v-if="isLoggedIn">
-          <span class="header__user">
-            {{ authState.user?.name }}
-          </span>
-
-          <RouterLink
-            to="/profile"
-            class="header__button header__button--primary"
-          >
-            Профіль
+          <RouterLink to="/profile" class="header__avatar" aria-label="Open profile">
+            <span>{{ userInitial }}</span>
+            <span class="header__avatar-status"></span>
           </RouterLink>
 
-          <button class="header__button" type="button" @click="handleLogout">
-            Вийти
+          <button type="button" class="header__logout" @click="handleLogout">
+            Log out
           </button>
         </template>
 
         <template v-else>
-          <RouterLink to="/login" class="header__button">
-            Увійти
+          <RouterLink to="/login" class="header__auth-link">
+            Log in
           </RouterLink>
 
-          <RouterLink
-            to="/register"
-            class="header__button header__button--primary"
-          >
-            Реєстрація
+          <RouterLink to="/register" class="header__auth-link header__auth-link--primary">
+            Sign up
           </RouterLink>
         </template>
       </div>
@@ -94,126 +131,206 @@ function handleLogout() {
 .header {
   position: sticky;
   top: 0;
-  z-index: 10;
-  width: 100%;
-  border-bottom: 1px solid #1f2937;
-  background: rgba(2, 6, 23, 0.9);
-  backdrop-filter: blur(12px);
+  z-index: 50;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.08);
+  background: rgba(3, 8, 18, 0.85);
+  backdrop-filter: blur(14px);
 }
 
 .header__inner {
-  width: min(1200px, calc(100% - 32px));
+  width: min(1320px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 18px 0;
+  min-height: 74px;
   display: grid;
-  grid-template-columns: 1.2fr 1fr 1.2fr;
-  gap: 20px;
+  grid-template-columns: auto 1fr auto;
+  gap: 28px;
   align-items: center;
 }
 
 .header__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
   min-width: 0;
+  color: #ffffff;
+  text-decoration: none;
+  font-weight: 800;
+  letter-spacing: -0.03em;
 }
 
-.header__tag {
-  margin: 0 0 6px;
-  color: #60a5fa;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 12px;
+.header__logo-mark {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border: 1px solid rgba(148, 163, 184, 0.22);
+  border-radius: 9px;
+  background: linear-gradient(180deg, #ffffff, #dbeafe);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.header__title {
-  margin: 0;
-  font-size: 22px;
-  line-height: 1.2;
-  color: #f8fafc;
+.header__logo-mark::before {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid #0f172a;
+  border-radius: 999px;
+}
+
+.header__logo-dot {
+  position: absolute;
+  width: 4px;
+  height: 4px;
+  border-radius: 999px;
+  background: #0f172a;
+}
+
+.header__brand-text {
+  font-size: 24px;
 }
 
 .header__nav {
   display: flex;
   justify-content: center;
-  gap: 14px;
+  gap: 22px;
   flex-wrap: wrap;
 }
 
-.header__link {
+.header__nav-link {
+  position: relative;
   color: #cbd5e1;
   text-decoration: none;
   font-weight: 600;
-  transition: color 0.2s ease;
+  padding: 4px 0;
 }
 
-.header__link:hover {
+.header__nav-link:hover,
+.header__nav-link--active {
   color: #60a5fa;
 }
 
-.header__link--active {
-  color: #60a5fa;
+.header__nav-link--active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -14px;
+  height: 2px;
+  border-radius: 999px;
+  background: #3b82f6;
 }
 
 .header__actions {
   display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  flex-wrap: wrap;
   align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
 }
 
 .header__search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 300px;
+  height: 44px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.header__search input {
   width: 100%;
-  max-width: 240px;
-  padding: 10px 12px;
-  border: 1px solid #374151;
-  border-radius: 12px;
-  background: #0f172a;
-  color: #e5e7eb;
+  height: 100%;
+  padding: 0 16px 0 42px;
+  border: none;
   outline: none;
-}
-
-.header__search::placeholder {
-  color: #94a3b8;
-}
-
-.header__search:focus {
-  border-color: #60a5fa;
-}
-
-.header__button {
-  border: 1px solid #374151;
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: inherit;
   background: transparent;
-  color: #e5e7eb;
+  color: #e2e8f0;
+}
+
+.header__search input::placeholder {
+  color: #64748b;
+}
+
+.header__search-icon {
+  position: absolute;
+  left: 14px;
+  width: 18px;
+  height: 18px;
+  color: #64748b;
+}
+
+.header__icon-button {
+  width: 42px;
+  height: 42px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  color: #e2e8f0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  font-weight: 600;
+}
+
+.header__icon-button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.header__avatar {
+  position: relative;
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #f8fafc 0%, #dbeafe 100%);
+  color: #0f172a;
+  font-weight: 800;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.header__button:hover {
-  border-color: #60a5fa;
+.header__avatar-status {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid #020617;
+  border-radius: 999px;
+  background: #22c55e;
 }
 
-.header__button--primary {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: white;
-}
-
-.header__button--primary:hover {
-  background: #1d4ed8;
-  border-color: #1d4ed8;
-}
-
-.header__user {
-  color: #cbd5e1;
+.header__logout,
+.header__auth-link {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(148, 163, 184, 0.14);
+  background: rgba(15, 23, 42, 0.8);
+  color: #e2e8f0;
+  text-decoration: none;
   font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
 }
 
-@media (max-width: 1024px) {
+.header__auth-link--primary {
+  background: linear-gradient(135deg, #2563eb 0%, #3b82f6 100%);
+  border-color: transparent;
+  color: #ffffff;
+}
+
+@media (max-width: 1180px) {
   .header__inner {
     grid-template-columns: 1fr;
+    padding: 16px 0;
   }
 
   .header__nav {
@@ -222,6 +339,32 @@ function handleLogout() {
 
   .header__actions {
     justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 900px) {
+  .header__inner {
+    width: min(100%, calc(100% - 32px));
+  }
+
+  .header__search {
+    width: 100%;
+    max-width: 360px;
+  }
+}
+
+@media (max-width: 640px) {
+  .header__brand-text {
+    font-size: 20px;
+  }
+
+  .header__nav {
+    gap: 14px;
+  }
+
+  .header__actions {
+    gap: 10px;
   }
 }
 </style>

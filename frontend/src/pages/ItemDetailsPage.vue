@@ -1,33 +1,57 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { RouterLink, useRoute, useRouter } from 'vue-router'
-import { getItemById } from '../services/api'
+import { RouterLink, useRoute } from 'vue-router'
+import ItemHeroPanel from '../components/item/ItemHeroPanel.vue'
+import ItemDescriptionSection from '../components/item/ItemDescriptionSection.vue'
+import ItemTrailersSection from '../components/item/ItemTrailersSection.vue'
+import ItemAvailabilitySection from '../components/item/ItemAvailabilitySection.vue'
+import ItemSimilarItems from '../components/item/ItemSimilarItems.vue'
+import ItemCommunitySection from '../components/item/ItemCommunitySection.vue'
+import { getItemById, getItems } from '../services/api'
+import { mockReviews } from '../mocks/itemDetails'
 import type { MediaItem } from '../types/media'
+import { buildSimilarItems, getDescriptionHeading } from '../utils/itemDetails'
 
 const route = useRoute()
-const router = useRouter()
 
 const item = ref<MediaItem | null>(null)
+const similarItems = ref<MediaItem[]>([])
 const isLoading = ref(true)
 const errorText = ref('')
 
-const itemId = computed(() => Number(route.params.id))
+const itemId = computed(() => String(route.params.id ?? ''))
 
-async function loadItem() {
+const breadcrumbCategory = computed(() => {
+  if (!item.value) return 'Catalog'
+
+  if (item.value.category === 'movie') return 'Movies'
+  if (item.value.category === 'series') return 'TV Series'
+  return 'Books'
+})
+
+const descriptionHeading = computed(() => {
+  return item.value ? getDescriptionHeading(item.value) : 'Description'
+})
+
+async function loadItemPage() {
   isLoading.value = true
   errorText.value = ''
 
   try {
-    if (Number.isNaN(itemId.value)) {
-      throw new Error('Некоректний id айтема')
+    if (!itemId.value.trim()) {
+      throw new Error('Invalid item id')
     }
 
-    const data = await getItemById(itemId.value)
-    item.value = data
+    const currentItem = await getItemById(itemId.value)
+    item.value = currentItem
+
+    const categoryItems = await getItems(currentItem.category)
+    similarItems.value = buildSimilarItems(currentItem, categoryItems, 6)
   } catch (error) {
     item.value = null
+    similarItems.value = []
     errorText.value =
-      error instanceof Error ? error.message : 'Невідома помилка'
+      error instanceof Error ? error.message : 'Unknown item details error'
   } finally {
     isLoading.value = false
   }
@@ -36,195 +60,111 @@ async function loadItem() {
 watch(
   () => route.params.id,
   () => {
-    loadItem()
-  }
+    loadItemPage()
+  },
 )
 
 onMounted(() => {
-  loadItem()
+  loadItemPage()
 })
 </script>
 
 <template>
-  <section class="item-details-page">
-    <div class="item-details-page__inner">
-      <div class="item-details-page__topbar">
-        <RouterLink to="/catalog" class="back-link">
-          ← Назад до каталогу
-        </RouterLink>
-
-        <button class="secondary-button" @click="router.back()">
-          Назад
-        </button>
+  <section class="item-page">
+    <div class="item-page__inner">
+      <div class="item-page__breadcrumbs">
+        <RouterLink to="/">Home</RouterLink>
+        <span>›</span>
+        <RouterLink to="/catalog">Catalog</RouterLink>
+        <span>›</span>
+        <span>{{ breadcrumbCategory }}</span>
+        <span v-if="item">›</span>
+        <span v-if="item">{{ item.title }}</span>
       </div>
 
-      <div v-if="isLoading" class="state-card">
-        Завантаження айтема...
+      <div v-if="isLoading" class="item-page__state">
+        Loading item details...
       </div>
 
-      <div v-else-if="errorText" class="state-card state-card--error">
-        Помилка: {{ errorText }}
+      <div v-else-if="errorText" class="item-page__state item-page__state--error">
+        {{ errorText }}
       </div>
 
-      <article v-else-if="item" class="details-card">
-        <p class="details-card__tag">Media Item</p>
-        <h2 class="details-card__title">{{ item.title }}</h2>
+      <template v-else-if="item">
+        <ItemHeroPanel :item="item" />
 
-        <div class="details-card__meta">
-          <span>Категорія: {{ item.category }}</span>
-          <span>Рік: {{ item.year }}</span>
-          <span>ID: {{ item.id }}</span>
-        </div>
+        <ItemDescriptionSection
+          :title="descriptionHeading"
+          :description="item.description"
+        />
 
-        <div class="details-card__genres">
-          <span
-            v-for="genre in item.genres"
-            :key="genre"
-            class="genre-badge"
-          >
-            {{ genre }}
-          </span>
-        </div>
+        <ItemTrailersSection :trailers="item.trailers ?? []" />
 
-        <p class="details-card__description">
-          {{ item.description }}
-        </p>
+        <ItemAvailabilitySection
+          :watch-links="item.watch_links ?? []"
+          :purchase-links="item.purchase_links ?? []"
+        />
 
-        <div class="details-card__actions">
-          <button class="primary-button">
-            Додати в обране
-          </button>
+        <ItemSimilarItems
+          :current-item="item"
+          :items="similarItems"
+        />
 
-          <button class="secondary-button">
-            Оцінити
-          </button>
-        </div>
-      </article>
+        <ItemCommunitySection
+          :item="item"
+          :reviews="mockReviews"
+        />
+      </template>
     </div>
   </section>
 </template>
 
 <style scoped>
-.item-details-page {
-  padding: 40px 16px 56px;
+.item-page {
+  width: 100%;
+  padding: 26px 0 56px;
 }
 
-.item-details-page__inner {
-  width: min(920px, 100%);
+.item-page__inner {
+  width: min(1320px, calc(100% - 48px));
   margin: 0 auto;
   display: grid;
-  gap: 20px;
+  gap: 34px;
 }
 
-.item-details-page__topbar {
+.item-page__breadcrumbs {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
   flex-wrap: wrap;
+  gap: 10px;
   align-items: center;
+  color: #64748b;
+  font-size: 13px;
 }
 
-.back-link {
-  color: #93c5fd;
+.item-page__breadcrumbs a {
+  color: #94a3b8;
   text-decoration: none;
-  font-weight: 600;
 }
 
-.back-link:hover {
-  color: #bfdbfe;
+.item-page__breadcrumbs a:hover {
+  color: #dbeafe;
 }
 
-.state-card,
-.details-card {
+.item-page__state {
   padding: 32px;
-  border-radius: 24px;
-  background: #071533;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  border-radius: 22px;
+  background: rgba(8, 14, 24, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  color: #cbd5e1;
 }
 
-.state-card--error {
+.item-page__state--error {
   color: #fca5a5;
 }
 
-.details-card__tag {
-  margin: 0 0 12px;
-  color: #60a5fa;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 14px;
-}
-
-.details-card__title {
-  margin: 0 0 16px;
-  font-size: 42px;
-  line-height: 1.1;
-  color: #f8fafc;
-}
-
-.details-card__meta {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin: 0 0 16px;
-  color: #cbd5e1;
-}
-
-.details-card__genres {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-
-.genre-badge {
-  display: inline-block;
-  padding: 6px 10px;
-  border-radius: 999px;
-  background: #0f172a;
-  border: 1px solid #374151;
-  color: #93c5fd;
-  font-size: 14px;
-}
-
-.details-card__description {
-  margin: 0 0 24px;
-  color: #cbd5e1;
-  line-height: 1.7;
-  font-size: 18px;
-}
-
-.details-card__actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.primary-button {
-  border: none;
-  border-radius: 12px;
-  padding: 12px 18px;
-  background: #2563eb;
-  color: white;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.primary-button:hover {
-  background: #1d4ed8;
-}
-
-.secondary-button {
-  border: 1px solid #374151;
-  border-radius: 12px;
-  padding: 12px 18px;
-  background: transparent;
-  color: #e5e7eb;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.secondary-button:hover {
-  border-color: #60a5fa;
+@media (max-width: 900px) {
+  .item-page__inner {
+    width: min(100%, calc(100% - 32px));
+  }
 }
 </style>

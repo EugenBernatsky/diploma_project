@@ -1,123 +1,123 @@
+<script setup lang="ts">
+import { onMounted, ref } from 'vue'
+import HomeHero from '../components/home/HomeHero.vue'
+import HomeRecentlyAdded from '../components/home/HomeRecentlyAdded.vue'
+import HomePopularFilms from '../components/home/HomePopularFilms.vue'
+import HomeForumTopics from '../components/home/HomeForumTopics.vue'
+import HomePromoSection from '../components/home/HomePromoSection.vue'
+import { homePageData } from '../mocks/home'
+import type { RecentlyAddedItem, PopularFilm } from '../types/home'
+import { getHomeShowcaseItems, getPopularMovieItems } from '../services/api'
+import { toRecentlyAddedItem, toPopularFilm } from '../utils/home'
+
+const recentlyAddedItems = ref<RecentlyAddedItem[]>(homePageData.recentlyAdded)
+const recentItemsLoading = ref(true)
+const recentItemsNote = ref('')
+
+const popularFilms = ref<PopularFilm[]>(homePageData.popularFilms)
+const popularFilmsLoading = ref(true)
+const popularFilmsNote = ref('')
+
+async function loadRecentItems() {
+  recentItemsLoading.value = true
+  recentItemsNote.value = ''
+
+  try {
+    const items = await getHomeShowcaseItems(5)
+
+    if (items.length > 0) {
+      recentlyAddedItems.value = items.map((item, index) =>
+        toRecentlyAddedItem(item, index),
+      )
+    } else {
+      recentItemsNote.value = 'No recent items came from the API, so demo content is shown.'
+    }
+  } catch {
+    recentItemsNote.value = 'API is unavailable right now, so demo content is shown.'
+  } finally {
+    recentItemsLoading.value = false
+  }
+}
+
+async function loadPopularFilms() {
+  popularFilmsLoading.value = true
+  popularFilmsNote.value = ''
+
+  try {
+    const items = await getPopularMovieItems(4)
+
+    if (items.length > 0) {
+      popularFilms.value = items.map((item, index) => toPopularFilm(item, index))
+    } else {
+      popularFilmsNote.value = 'No movie data came from the API, so demo content is shown.'
+    }
+  } catch {
+    popularFilmsNote.value = 'API is unavailable right now, so demo content is shown.'
+  } finally {
+    popularFilmsLoading.value = false
+  }
+}
+
+onMounted(() => {
+  loadRecentItems()
+  loadPopularFilms()
+})
+</script>
+
 <template>
-  <section class="home-page">
-    <div class="home-page__inner">
-      <section class="hero">
-        <p class="hero__tag">MediaCompass</p>
-        <h2 class="hero__title">Розумний підбір медіа-контенту в одному просторі</h2>
-        <p class="hero__text">
-          Тут буде головна сторінка з коротким описом сервісу, нещодавно доданими
-          елементами, популярними категоріями та блоком персоналізованих рекомендацій.
-        </p>
-      </section>
+  <div class="home-page">
+    <HomeHero
+      :badge="homePageData.hero.badge"
+      :title="homePageData.hero.title"
+      :accent-title="homePageData.hero.accentTitle"
+      :description="homePageData.hero.description"
+      :background-image="homePageData.hero.backgroundImage"
+      :actions="homePageData.hero.actions"
+    />
 
-      <section class="section-card">
-        <h3 class="section-card__title">Нещодавно додані</h3>
-        <div class="carousel-placeholder">
-          <div class="carousel-item">Новий фільм</div>
-          <div class="carousel-item">Новий серіал</div>
-          <div class="carousel-item">Нова книга</div>
-        </div>
-      </section>
+    <HomeRecentlyAdded
+      :items="recentlyAddedItems"
+      :is-loading="recentItemsLoading"
+      :note="recentItemsNote"
+    />
 
-      <section class="section-card">
-        <h3 class="section-card__title">Що буде на цій сторінці</h3>
-        <ul class="feature-list">
-          <li>Карусель нових айтемів</li>
-          <li>Короткий опис платформи</li>
-          <li>Популярні категорії</li>
-          <li>Блок персональних рекомендацій</li>
-        </ul>
-      </section>
-    </div>
-  </section>
+    <section class="home-page__feature-grid">
+      <HomePopularFilms
+        :films="popularFilms"
+        :is-loading="popularFilmsLoading"
+        :note="popularFilmsNote"
+      />
+      <HomeForumTopics :topics="homePageData.hotTopics" />
+    </section>
+
+    <HomePromoSection :tiles="homePageData.promoTiles" />
+  </div>
 </template>
 
 <style scoped>
 .home-page {
   width: 100%;
-  padding: 40px 16px 56px;
+  padding-bottom: 32px;
 }
 
-.home-page__inner {
-  width: min(1100px, 100%);
+.home-page__feature-grid {
+  width: min(1320px, calc(100% - 48px));
   margin: 0 auto;
+  padding: 12px 0 28px;
   display: grid;
-  gap: 24px;
+  grid-template-columns: 1fr 1.2fr;
+  gap: 22px;
 }
 
-.hero,
-.section-card {
-  padding: 32px;
-  border-radius: 24px;
-  background: #071533;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
-}
-
-.hero__tag {
-  margin: 0 0 12px;
-  color: #60a5fa;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 14px;
-}
-
-.hero__title {
-  margin: 0 0 16px;
-  font-size: 48px;
-  line-height: 1.1;
-  color: #f8fafc;
-}
-
-.hero__text {
-  margin: 0;
-  max-width: 760px;
-  color: #cbd5e1;
-  font-size: 20px;
-}
-
-.section-card__title {
-  margin: 0 0 18px;
-  font-size: 28px;
-  color: #f8fafc;
-}
-
-.carousel-placeholder {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 16px;
-}
-
-.carousel-item {
-  padding: 24px;
-  border-radius: 18px;
-  background: #1f2937;
-  border: 1px solid #253043;
-  color: #e5e7eb;
-  font-weight: 600;
-  text-align: center;
-}
-
-.feature-list {
-  margin: 0;
-  padding-left: 20px;
-  color: #cbd5e1;
-  display: grid;
-  gap: 10px;
-}
-
-@media (max-width: 768px) {
-  .hero,
-  .section-card {
-    padding: 24px;
+@media (max-width: 1100px) {
+  .home-page__feature-grid {
+    grid-template-columns: 1fr;
   }
+}
 
-  .hero__title {
-    font-size: 36px;
-  }
-
-  .hero__text {
-    font-size: 18px;
+@media (max-width: 900px) {
+  .home-page__feature-grid {
+    width: min(100%, calc(100% - 32px));
   }
 }
 </style>

@@ -1,189 +1,356 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
+import CatalogToolbar from '../components/catalog/CatalogToolbar.vue'
+import CatalogFiltersSidebar from '../components/catalog/CatalogFiltersSidebar.vue'
+import CatalogPagination from '../components/catalog/CatalogPagination.vue'
 import MediaItemCard from '../components/catalog/MediaItemCard.vue'
-import { checkHealth, getItems } from '../services/api'
+import { getItems } from '../services/api'
 import type { Category, MediaItem } from '../types/media'
+import type {
+  CatalogCategory,
+  CatalogSort,
+  DurationBucket,
+  YearBucket,
+} from '../utils/catalog'
+import {
+  getItemRating,
+  matchesDurationBucket,
+  matchesYearBucket,
+  sortCatalogItems,
+} from '../utils/catalog'
 
-const apiStatus = ref('loading')
-const apiMessage = ref('Перевіряємо з’єднання з backend...')
+const route = useRoute()
+const router = useRouter()
+
+const allItems = ref<MediaItem[]>([])
+const isLoading = ref(true)
 const errorText = ref('')
-const items = ref<MediaItem[]>([])
-const searchQuery = ref('')
-const selectedGenre = ref('all')
-const currentCategory = ref<Category>('movie')
 
-const categoryLabels: Record<Category, string> = {
-  movie: 'Фільми',
-  series: 'Серіали',
-  book: 'Книги',
+const currentCategory = ref<CatalogCategory>('all')
+const searchQuery = ref('')
+const sortBy = ref<CatalogSort>('popular')
+
+const selectedGenres = ref<string[]>([])
+const selectedYearBucket = ref<YearBucket>('any')
+const minRating = ref(0)
+const selectedDurationBucket = ref<DurationBucket>('any')
+
+const currentPage = ref(1)
+const itemsPerPage = 12
+
+const applyingRouteState = ref(false)
+const pendingGenresFromRoute = ref<string[] | null>(null)
+
+function uniqueById(items: MediaItem[]) {
+  const seen = new Set<string>()
+  const result: MediaItem[] = []
+
+  for (const item of items) {
+    const key = String(item.id)
+    if (seen.has(key)) continue
+    seen.add(key)
+    result.push(item)
+  }
+
+  return result
 }
 
-const availableGenres = computed(() => {
-  const genres = new Set<string>()
+function parseCategoryQuery(value: unknown): CatalogCategory {
+  if (value === 'movie' || value === 'series' || value === 'book' || value === 'all') {
+    return value
+  }
 
-  for (const item of items.value) {
-    for (const genre of item.genres) {
-      genres.add(genre)
+  return 'all'
+}
+
+function parseGenresQuery(value: unknown): string[] {
+  if (typeof value !== 'string' || !value.trim()) {
+    return []
+  }
+
+  return value
+    .split(',')
+    .map((genre) => genre.trim())
+    .filter(Boolean)
+}
+
+function applyRouteFilters() {
+  applyingRouteState.value = true
+
+  currentCategory.value = parseCategoryQuery(route.query.category)
+  pendingGenresFromRoute.value = parseGenresQuery(route.query.genres)
+
+  applyingRouteState.value = false
+}
+
+function syncRouteFilters() {
+  const nextQuery = { ...route.query }
+
+  if (currentCategory.value !== 'all') {
+    nextQuery.category = currentCategory.value
+  } else {
+    delete nextQuery.category
+  }
+
+  if (selectedGenres.value.length) {
+    nextQuery.genres = selectedGenres.value.join(',')
+  } else {
+    delete nextQuery.genres
+  }
+
+  router.replace({ query: nextQuery })
+}
+
+async function loadCatalog() {
+  isLoading.value = true
+  errorText.value = ''
+
+  try {
+    const categories: Category[] = ['movie', 'series', 'book']
+
+    const results = await Promise.allSettled(
+      categories.map((category) => getItems(category)),
+    )
+
+    const successfulItems = results
+      .filter(
+        (result): result is PromiseFulfilledResult<MediaItem[]> =>
+          result.status === 'fulfilled',
+      )
+      .flatMap((result) => result.value)
+
+    if (successfulItems.length === 0) {
+      throw new Error('Catalog data was not loaded from the API.')
+    }
+
+    allItems.value = uniqueById(successfulItems)
+  } catch (error) {
+    errorText.value =
+      error instanceof Error ? error.message : 'Unknown catalog error'
+    allItems.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const categoryItems = computed(() => {
+  if (currentCategory.value === 'all') {
+    return allItems.value
+  }
+
+  return allItems.value.filter((item) => item.category === currentCategory.value)
+})
+
+const availableGenres = computed(() => {
+  const set = new Set<string>()
+
+  for (const item of categoryItems.value) {
+    for (const genre of item.genres || []) {
+      if (genre?.trim()) {
+        set.add(genre.trim())
+      }
     }
   }
 
-  return Array.from(genres).sort((a, b) => a.localeCompare(b))
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
 })
 
 const filteredItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
-  return items.value.filter((item) => {
+  return categoryItems.value.filter((item) => {
     const matchesSearch =
       !query ||
       item.title.toLowerCase().includes(query) ||
       item.description.toLowerCase().includes(query) ||
       item.genres.some((genre) => genre.toLowerCase().includes(query))
 
-    const matchesGenre =
-      selectedGenre.value === 'all' ||
-      item.genres.includes(selectedGenre.value)
+    const matchesGenres =
+      selectedGenres.value.length === 0 ||
+      selectedGenres.value.every((genre) => item.genres.includes(genre))
 
-    return matchesSearch && matchesGenre
+    const rating = getItemRating(item)
+    const matchesRating = rating === null || rating >= minRating.value
+    const matchesYear = matchesYearBucket(item, selectedYearBucket.value)
+    const matchesDuration = matchesDurationBucket(item, selectedDurationBucket.value)
+
+    return (
+      matchesSearch &&
+      matchesGenres &&
+      matchesRating &&
+      matchesYear &&
+      matchesDuration
+    )
   })
 })
 
-async function loadPageData() {
-  try {
-    const health = await checkHealth()
-    const data = await getItems(currentCategory.value)
-
-    apiStatus.value = health.status
-    apiMessage.value = `Показуємо каталог: ${categoryLabels[currentCategory.value]}`
-    items.value = data
-    errorText.value = ''
-  } catch (error) {
-    apiStatus.value = 'error'
-    apiMessage.value = 'Не вдалося підключитися до backend.'
-    errorText.value =
-      error instanceof Error ? error.message : 'Невідома помилка'
-  }
-}
-
-function resetFilters() {
-  searchQuery.value = ''
-  selectedGenre.value = 'all'
-}
-
-watch(currentCategory, () => {
-  resetFilters()
-  loadPageData()
+const sortedItems = computed(() => {
+  return sortCatalogItems(filteredItems.value, sortBy.value)
 })
 
-onMounted(() => {
-  loadPageData()
+const totalPages = computed(() => {
+  return Math.max(1, Math.ceil(sortedItems.value.length / itemsPerPage))
+})
+
+const paginatedItems = computed(() => {
+  const start = (currentPage.value - 1) * itemsPerPage
+  return sortedItems.value.slice(start, start + itemsPerPage)
+})
+
+function toggleGenre(genre: string) {
+  if (selectedGenres.value.includes(genre)) {
+    selectedGenres.value = selectedGenres.value.filter((item) => item !== genre)
+    return
+  }
+
+  selectedGenres.value = [...selectedGenres.value, genre]
+}
+
+function resetSidebarFilters() {
+  selectedGenres.value = []
+  selectedYearBucket.value = 'any'
+  minRating.value = 0
+  selectedDurationBucket.value = 'any'
+}
+
+function handleCategoryChange(value: CatalogCategory) {
+  currentCategory.value = value
+  selectedGenres.value = []
+}
+
+watch(
+  () => route.query,
+  () => {
+    applyRouteFilters()
+  },
+  { deep: true },
+)
+
+watch(availableGenres, (genres) => {
+  if (pendingGenresFromRoute.value) {
+    selectedGenres.value = pendingGenresFromRoute.value.filter((genre) =>
+      genres.includes(genre),
+    )
+    pendingGenresFromRoute.value = null
+    return
+  }
+
+  selectedGenres.value = selectedGenres.value.filter((genre) => genres.includes(genre))
+})
+
+watch(
+  [currentCategory, selectedGenres],
+  () => {
+    if (applyingRouteState.value || pendingGenresFromRoute.value) {
+      return
+    }
+
+    syncRouteFilters()
+  },
+  { deep: true },
+)
+
+watch(
+  [
+    currentCategory,
+    searchQuery,
+    sortBy,
+    selectedGenres,
+    selectedYearBucket,
+    minRating,
+    selectedDurationBucket,
+  ],
+  () => {
+    currentPage.value = 1
+  },
+  { deep: true },
+)
+
+watch(totalPages, (pages) => {
+  if (currentPage.value > pages) {
+    currentPage.value = pages
+  }
+})
+
+onMounted(async () => {
+  applyRouteFilters()
+  await loadCatalog()
 })
 </script>
 
 <template>
   <section class="catalog-page">
     <div class="catalog-page__inner">
-      <div class="catalog-page__hero">
-        <p class="catalog-page__tag">MediaCompass</p>
-        <h2 class="catalog-page__title">Веб-портал для підбору медіа-контенту</h2>
+      <header class="catalog-page__hero">
+        <h1 class="catalog-page__title">Explore Catalog</h1>
         <p class="catalog-page__text">
-          {{ apiMessage }}
+          Discover thousands of stories across our vast library of cinema, literature,
+          and television series.
         </p>
-      </div>
+      </header>
 
-      <div class="status-box">
-        <span class="status-box__label">Статус API:</span>
-        <span
-          class="status-box__value"
-          :class="{
-            ok: apiStatus === 'ok',
-            loading: apiStatus === 'loading',
-            error: apiStatus === 'error'
-          }"
-        >
-          {{ apiStatus }}
-        </span>
-      </div>
+      <div class="catalog-page__content">
+        <div class="catalog-page__main">
+          <CatalogToolbar
+            :category="currentCategory"
+            :search-query="searchQuery"
+            :sort-by="sortBy"
+            @update:category="handleCategoryChange"
+            @update:searchQuery="searchQuery = $event"
+            @update:sortBy="sortBy = $event"
+          />
 
-      <button class="action-button" @click="loadPageData">
-        Оновити дані
-      </button>
+          <div class="catalog-page__summary">
+            <p class="catalog-page__summary-text">
+              <span>{{ sortedItems.length }}</span> items found
+            </p>
 
-      <p v-if="errorText" class="error-text">
-        Деталі: {{ errorText }}
-      </p>
-
-      <div class="category-switcher">
-        <button
-          class="category-button"
-          :class="{ active: currentCategory === 'movie' }"
-          @click="currentCategory = 'movie'"
-        >
-          Фільми
-        </button>
-
-        <button
-          class="category-button"
-          :class="{ active: currentCategory === 'series' }"
-          @click="currentCategory = 'series'"
-        >
-          Серіали
-        </button>
-
-        <button
-          class="category-button"
-          :class="{ active: currentCategory === 'book' }"
-          @click="currentCategory = 'book'"
-        >
-          Книги
-        </button>
-      </div>
-
-      <section class="items-section">
-        <div class="items-header">
-          <h3 class="items-title">{{ categoryLabels[currentCategory] }}</h3>
-
-          <div class="filters">
-            <input
-              v-model="searchQuery"
-              type="text"
-              class="search-input"
-              placeholder="Пошук за назвою, описом або жанром..."
-            />
-
-            <select v-model="selectedGenre" class="genre-select">
-              <option value="all">Усі жанри</option>
-              <option
-                v-for="genre in availableGenres"
-                :key="genre"
-                :value="genre"
-              >
-                {{ genre }}
-              </option>
-            </select>
-
-            <button class="secondary-button" @click="resetFilters">
-              Скинути фільтри
+            <button type="button" class="catalog-page__refresh" @click="loadCatalog">
+              Refresh
             </button>
           </div>
+
+          <p v-if="errorText" class="catalog-page__error">
+            {{ errorText }}
+          </p>
+
+          <div v-if="isLoading" class="catalog-grid">
+            <div v-for="index in 12" :key="index" class="catalog-skeleton"></div>
+          </div>
+
+          <div v-else-if="paginatedItems.length > 0" class="catalog-grid">
+            <MediaItemCard
+              v-for="item in paginatedItems"
+              :key="item.id"
+              :item="item"
+            />
+          </div>
+
+          <div v-else class="catalog-page__empty">
+            No items match the current filters.
+          </div>
+
+          <CatalogPagination
+            :current-page="currentPage"
+            :total-pages="totalPages"
+            @update:page="currentPage = $event"
+          />
         </div>
 
-        <p class="results-info">
-          Знайдено: {{ filteredItems.length }}
-        </p>
-
-        <ul v-if="filteredItems.length > 0" class="items-list">
-          <MediaItemCard
-            v-for="item in filteredItems"
-            :key="item.id"
-            :item="item"
-          />
-        </ul>
-
-        <p v-else class="empty-state">
-          У цій категорії нічого не знайдено.
-        </p>
-      </section>
+        <CatalogFiltersSidebar
+          :genres="availableGenres"
+          :selected-genres="selectedGenres"
+          :selected-year-bucket="selectedYearBucket"
+          :min-rating="minRating"
+          :selected-duration-bucket="selectedDurationBucket"
+          @toggleGenre="toggleGenre"
+          @update:yearBucket="selectedYearBucket = $event"
+          @update:minRating="minRating = $event"
+          @update:durationBucket="selectedDurationBucket = $event"
+          @reset="resetSidebarFilters"
+        />
+      </div>
     </div>
   </section>
 </template>
@@ -191,231 +358,159 @@ onMounted(() => {
 <style scoped>
 .catalog-page {
   width: 100%;
-  padding: 40px 16px 56px;
+  padding: 30px 0 56px;
 }
 
 .catalog-page__inner {
-  width: min(920px, 100%);
+  width: min(1320px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 32px;
-  border-radius: 24px;
-  background: #071533;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.25);
+  padding: 30px 0 0;
 }
 
 .catalog-page__hero {
-  margin-bottom: 24px;
-}
-
-.catalog-page__tag {
-  margin: 0 0 12px;
-  color: #60a5fa;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  font-size: 14px;
+  padding: 34px 28px 30px;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  border-radius: 0 0 24px 24px;
+  background:
+    radial-gradient(circle at left top, rgba(37, 99, 235, 0.16), transparent 36%),
+    rgba(7, 14, 24, 0.9);
+  margin-bottom: 26px;
 }
 
 .catalog-page__title {
-  margin: 0 0 16px;
-  font-size: 48px;
-  line-height: 1.1;
+  margin: 0 0 12px;
   color: #f8fafc;
+  font-size: clamp(42px, 5vw, 64px);
+  line-height: 1;
+  letter-spacing: -0.04em;
 }
 
 .catalog-page__text {
+  max-width: 720px;
   margin: 0;
-  color: #cbd5e1;
-  font-size: 20px;
+  color: #94a3b8;
+  font-size: 18px;
+  line-height: 1.7;
 }
 
-.status-box {
+.catalog-page__content {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 24px;
+  align-items: start;
+}
+
+.catalog-page__main {
+  min-width: 0;
+}
+
+.catalog-page__summary {
   display: flex;
+  justify-content: space-between;
+  gap: 16px;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 16px;
-  padding: 16px 18px;
-  border-radius: 14px;
-  background: #1f2937;
+  margin: 18px 0 20px;
 }
 
-.status-box__label {
-  color: #cbd5e1;
+.catalog-page__summary-text {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.catalog-page__summary-text span {
+  color: #f8fafc;
+  font-weight: 800;
+}
+
+.catalog-page__refresh {
+  min-height: 42px;
+  padding: 0 16px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #e2e8f0;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  cursor: pointer;
   font-weight: 600;
 }
 
-.status-box__value {
-  font-weight: 700;
-  text-transform: uppercase;
-}
-
-.status-box__value.ok {
-  color: #4ade80;
-}
-
-.status-box__value.loading {
-  color: #facc15;
-}
-
-.status-box__value.error {
-  color: #f87171;
-}
-
-.error-text {
-  margin: 0 0 20px;
+.catalog-page__error {
+  margin: 0 0 16px;
   color: #fca5a5;
 }
 
-.category-switcher {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 20px 0;
-}
-
-.category-button {
-  border: 1px solid #374151;
-  border-radius: 12px;
-  padding: 10px 16px;
-  background: #111827;
-  color: #e5e7eb;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.category-button:hover {
-  border-color: #60a5fa;
-}
-
-.category-button.active {
-  background: #2563eb;
-  border-color: #2563eb;
-  color: white;
-}
-
-.action-button {
-  border: none;
-  border-radius: 12px;
-  padding: 12px 18px;
-  background: #2563eb;
-  color: white;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.action-button:hover {
-  background: #1d4ed8;
-}
-
-.items-section {
-  margin-top: 32px;
-}
-
-.items-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-}
-
-.items-title {
-  margin: 0;
-  font-size: 28px;
-  color: #f8fafc;
-}
-
-.filters {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  width: 100%;
-}
-
-.search-input {
-  width: 100%;
-  max-width: 320px;
-  padding: 12px 14px;
-  border: 1px solid #374151;
-  border-radius: 12px;
-  background: #0f172a;
-  color: #e5e7eb;
-  outline: none;
-}
-
-.search-input::placeholder {
-  color: #94a3b8;
-}
-
-.search-input:focus {
-  border-color: #60a5fa;
-}
-
-.genre-select {
-  min-width: 180px;
-  padding: 12px 14px;
-  border: 1px solid #374151;
-  border-radius: 12px;
-  background: #0f172a;
-  color: #e5e7eb;
-  outline: none;
-}
-
-.genre-select:focus {
-  border-color: #60a5fa;
-}
-
-.secondary-button {
-  border: 1px solid #374151;
-  border-radius: 12px;
-  padding: 12px 18px;
-  background: transparent;
-  color: #e5e7eb;
-  cursor: pointer;
-  font-weight: 600;
-}
-
-.secondary-button:hover {
-  border-color: #60a5fa;
-}
-
-.results-info {
-  margin: 0 0 16px;
-  color: #cbd5e1;
-}
-
-.items-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
+.catalog-grid {
   display: grid;
-  gap: 16px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 18px;
 }
 
-.empty-state {
-  margin: 0;
-  padding: 18px;
-  border-radius: 14px;
-  background: #1f2937;
-  color: #cbd5e1;
+.catalog-skeleton {
+  aspect-ratio: 0.76 / 1.28;
+  border-radius: 18px;
+  background: linear-gradient(
+    90deg,
+    rgba(15, 23, 42, 0.9) 0%,
+    rgba(30, 41, 59, 0.95) 50%,
+    rgba(15, 23, 42, 0.9) 100%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 1.4s linear infinite;
 }
 
-@media (max-width: 768px) {
+.catalog-page__empty {
+  padding: 32px;
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  background: rgba(9, 14, 25, 0.7);
+  color: #94a3b8;
+  text-align: center;
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+
+  100% {
+    background-position: -20% 0;
+  }
+}
+
+@media (max-width: 1200px) {
+  .catalog-page__content {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 1080px) {
+  .catalog-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 900px) {
   .catalog-page__inner {
-    padding: 24px;
+    width: min(100%, calc(100% - 32px));
   }
 
-  .catalog-page__title {
-    font-size: 36px;
+  .catalog-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 620px) {
+  .catalog-page__hero {
+    padding: 28px 20px 24px;
   }
 
-  .catalog-page__text {
-    font-size: 18px;
+  .catalog-page__summary {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
-  .search-input {
-    max-width: 100%;
+  .catalog-grid {
+    grid-template-columns: 1fr;
   }
 }
 </style>
