@@ -1,6 +1,5 @@
 export type ForumCategoryType = 'movie' | 'series' | 'book' | 'custom'
-
-export type ForumSortOption = 'active' | 'top' | 'newest' | 'replies'
+export type ForumThreadSort = 'activity' | 'newest' | 'score'
 
 export type ForumThreadResponse = {
   id: string
@@ -19,6 +18,13 @@ export type ForumThreadResponse = {
   edited: boolean
 }
 
+export type ForumThreadCreatePayload = {
+  title: string
+  text: string
+  category_type: ForumCategoryType
+  custom_category: string | null
+}
+
 export type ForumPostBaseResponse = {
   id: string
   thread_id: string
@@ -28,6 +34,9 @@ export type ForumPostBaseResponse = {
   text: string
   score: number
   parent_post_id: string | null
+  reply_to_post_id: string | null
+  reply_to_user_id: string | null
+  reply_to_username: string | null
   created_at: string
   updated_at: string
   edited: boolean
@@ -39,12 +48,25 @@ export type ForumPostResponse = ForumPostBaseResponse & {
   replies: ForumPostReplyResponse[]
 }
 
-export type ForumMockThread = ForumThreadResponse & {
-  views: number
-  is_trending?: boolean
+export type ForumPostCreatePayload = {
+  text: string
+  reply_to_post_id?: string
 }
 
-export type ForumMockData = {
-  threads: ForumMockThread[]
-  postsByThread: Record<string, ForumPostResponse[]>
+export type ForumVotePayload = {
+  value: 1 | -1
+}
+
+export type ForumVoteResponse = {
+  target_type: 'thread' | 'post'
+  target_id: string
+  current_vote: 1 | -1 | null
+  score: number
+  message: string
+}
+
+export type ForumMyVoteResponse = {
+  target_type: 'thread' | 'post'
+  target_id: string
+  current_vote: 1 | -1 | null
 }

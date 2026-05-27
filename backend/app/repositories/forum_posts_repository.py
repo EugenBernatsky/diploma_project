@@ -88,6 +88,9 @@ async def insert_post(
     author_avatar_id: str,
     text: str,
     parent_post_id: str | None,
+    reply_to_post_id: str | None,
+    reply_to_user_id: str | None,
+    reply_to_username: str | None,
     created_at: datetime,
     updated_at: datetime,
 ) -> dict:
@@ -100,7 +103,15 @@ async def insert_post(
         "author_avatar_id": author_avatar_id,
         "text": text,
         "score": 0,
+
+        # Для групування в один рівень вкладеності.
         "parent_post_id": ObjectId(parent_post_id) if parent_post_id else None,
+
+        # Для точного адресата відповіді.
+        "reply_to_post_id": ObjectId(reply_to_post_id) if reply_to_post_id else None,
+        "reply_to_user_id": ObjectId(reply_to_user_id) if reply_to_user_id else None,
+        "reply_to_username": reply_to_username,
+
         "created_at": created_at,
         "updated_at": updated_at,
     }

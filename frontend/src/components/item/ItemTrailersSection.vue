@@ -1,9 +1,14 @@
 <script setup lang="ts">
+import { useAuth } from '../../services/auth'
+import { createInteraction } from '../../services/interactions'
 import type { MediaTrailer } from '../../types/media'
 
 const props = defineProps<{
+  itemId: string
   trailers: MediaTrailer[]
 }>()
+
+const { isLoggedIn } = useAuth()
 
 function extractYouTubeVideoId(url: string): string | null {
   try {
@@ -39,6 +44,20 @@ function getEmbedUrl(url: string): string | null {
 
   return `https://www.youtube.com/embed/${videoId}`
 }
+
+function trackTrailerClick() {
+  if (!isLoggedIn.value) {
+    return
+  }
+
+  void createInteraction({
+    item_id: props.itemId,
+    interaction_type: 'trailer_click',
+    source: 'item_page',
+  }).catch(() => {
+    // interaction logging should not block user navigation
+  })
+}
 </script>
 
 <template>
@@ -68,12 +87,13 @@ function getEmbedUrl(url: string): string | null {
             target="_blank"
             rel="noreferrer"
             class="item-trailers__open-link"
+            @click="trackTrailerClick"
           >
             Open
           </a>
         </div>
 
-        <div v-if="getEmbedUrl(trailer.url)" class="item-trailers__player-wrap">
+        <div v-if="getEmbedUrl(trailer.url)" class="item-trailers__player-wrap" @click.capture="trackTrailerClick">
           <iframe
             class="item-trailers__player"
             :src="getEmbedUrl(trailer.url) || undefined"

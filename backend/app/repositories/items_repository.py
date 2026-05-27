@@ -4,14 +4,28 @@ from app.db.mongo import get_db
 from app.schemas.item import Category
 
 
-async def find_items(category: Category | None = None, limit: int = 100) -> list[dict]:
+async def find_items(
+    category: Category | None = None,
+    limit: int = 100,
+    skip: int = 0,
+) -> list[dict]:
     db = get_db()
 
     query = {}
     if category is not None:
         query["category"] = category
 
-    return await db.media_items.find(query).to_list(length=limit)
+    return await db.media_items.find(query).skip(skip).limit(limit).to_list(length=limit)
+
+
+async def count_items(category: Category | None = None) -> int:
+    db = get_db()
+
+    query = {}
+    if category is not None:
+        query["category"] = category
+
+    return await db.media_items.count_documents(query)
 
 
 async def find_item_by_id(item_id: str) -> dict | None:

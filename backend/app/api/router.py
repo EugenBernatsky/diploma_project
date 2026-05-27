@@ -14,6 +14,8 @@ from app.api.endpoints.forum import router as forum_router
 from app.api.endpoints.admin_forum import router as admin_forum_router
 from app.api.endpoints.admin_items import router as admin_items_router
 from app.api.endpoints.profile import router as profile_router
+from app.api.endpoints.recommendations import router as recommendations_router
+from app.api.endpoints.admin_dashboard import router as admin_dashboard_router
 
 api_router = APIRouter()
 
@@ -31,3 +33,5 @@ api_router.include_router(forum_router)
 api_router.include_router(admin_forum_router)
 api_router.include_router(admin_items_router)
 api_router.include_router(profile_router)
+api_router.include_router(recommendations_router)
+api_router.include_router(admin_dashboard_router)

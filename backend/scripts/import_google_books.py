@@ -191,10 +191,59 @@ def map_book_item(volume: dict) -> dict:
     }
 
 
-async def fetch_json(client: httpx.AsyncClient, path: str, params: dict | None = None) -> dict:
-    response = await client.get(path, params=params)
-    response.raise_for_status()
-    return response.json()
+async def fetch_json(
+    client: httpx.AsyncClient,
+    path: str,
+    params: dict | None = None,
+    retries: int = 5,
+    base_delay: float = 2.0,
+) -> dict:
+    last_error: Exception | None = None
+
+    for attempt in range(retries + 1):
+        try:
+            response = await client.get(path, params=params)
+
+            if response.status_code == 429:
+                retry_after = response.headers.get("Retry-After")
+
+                if retry_after and retry_after.isdigit():
+                    delay = float(retry_after)
+                else:
+                    delay = base_delay * (2 ** attempt)
+
+                print(f"Rate limit 429. Waiting {delay:.1f}s before retry...")
+                await asyncio.sleep(delay)
+                continue
+
+            response.raise_for_status()
+            return response.json()
+
+        except httpx.HTTPStatusError as error:
+            last_error = error
+
+            status_code = error.response.status_code
+
+            if status_code in {500, 502, 503, 504} and attempt < retries:
+                delay = base_delay * (2 ** attempt)
+                print(f"Server error {status_code}. Waiting {delay:.1f}s before retry...")
+                await asyncio.sleep(delay)
+                continue
+
+            raise
+
+        except httpx.RequestError as error:
+            last_error = error
+
+            if attempt < retries:
+                delay = base_delay * (2 ** attempt)
+                print(f"Network error. Waiting {delay:.1f}s before retry...")
+                await asyncio.sleep(delay)
+                continue
+
+            raise
+
+    raise RuntimeError(f"Failed to fetch {path}") from last_error
 
 
 async def upsert_media_item(db, item_data: dict) -> None:
@@ -228,7 +277,9 @@ async def import_books(
     imported = 0
     start_index = 0
 
-    for _ in range(pages):
+    for page_number in range(1, pages + 1):
+        print(f"Importing books page {page_number}/{pages}, startIndex={start_index}")
+
         search_payload = await fetch_json(
             client,
             "/volumes",
@@ -246,6 +297,7 @@ async def import_books(
 
         items = search_payload.get("items", [])
         if not items:
+            print("No more books found. Stopping import.")
             break
 
         for item in items:
@@ -253,21 +305,13 @@ async def import_books(
             if not volume_id:
                 continue
 
-            volume_payload = await fetch_json(
-                client,
-                f"/volumes/{volume_id}",
-                params={
-                    "projection": "full",
-                    "country": settings.GOOGLE_BOOKS_COUNTRY,
-                    "key": settings.GOOGLE_BOOKS_API_KEY,
-                },
-            )
-
-            mapped = map_book_item(volume_payload)
+            mapped = map_book_item(item)
             await upsert_media_item(db, mapped)
             imported += 1
 
         start_index += max_results_per_page
+
+        await asyncio.sleep(1.0)
 
     return imported
 

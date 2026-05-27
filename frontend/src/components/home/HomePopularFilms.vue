@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
 import type { PopularFilm } from '../../types/home'
+import { buildItemRoute } from '../../utils/itemRoutes'
 
 defineProps<{
   films: PopularFilm[]
@@ -39,7 +40,7 @@ defineProps<{
       <RouterLink
         v-for="film in films"
         :key="film.id"
-        :to="`/items/${film.id}`"
+        :to="buildItemRoute(film.id, 'home')"
         class="film-card"
       >
         <div class="film-card__poster">

@@ -32,5 +32,15 @@ class Settings(BaseSettings):
     GOOGLE_BOOKS_COUNTRY: str
     GOOGLE_BOOKS_LANG: str
 
+    BREVO_API_KEY: str = ""
+    BREVO_SENDER_EMAIL: str = ""
+    BREVO_SENDER_NAME: str = "MediaCompass"
+
+    EMAIL_VERIFICATION_CODE_EXPIRE_MINUTES: int = 10
+    EMAIL_VERIFICATION_RESEND_SECONDS: int = 60
+    EMAIL_VERIFICATION_MAX_ATTEMPTS: int = 5
+
+    USERNAME_CHANGE_COOLDOWN_DAYS: int = 7
+
 
 settings = Settings()

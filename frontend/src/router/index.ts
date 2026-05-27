@@ -1,5 +1,4 @@
 import { createRouter, createWebHistory } from 'vue-router'
-
 import HomePage from '../pages/HomePage.vue'
 import CatalogPage from '../pages/CatalogPage.vue'
 import ItemDetailsPage from '../pages/ItemDetailsPage.vue'
@@ -8,51 +7,71 @@ import ForumPage from '../pages/ForumPage.vue'
 import ProfilePage from '../pages/ProfilePage.vue'
 import LoginPage from '../pages/LoginPage.vue'
 import RegisterPage from '../pages/RegisterPage.vue'
-import { isAuthenticated } from '../services/auth'
+import { useAuth } from '../services/auth'
+import ForumThreadPage from '../pages/ForumThreadPage.vue'
+import NewDiscussionPage from '../pages/NewDiscussionPage.vue'
 
 const router = createRouter({
   history: createWebHistory(),
   routes: [
-    { path: '/', name: 'home', component: HomePage },
-    { path: '/catalog', name: 'catalog', component: CatalogPage },
-    { path: '/items/:id', name: 'item-details', component: ItemDetailsPage },
+    { path: '/', component: HomePage },
+    { path: '/catalog', component: CatalogPage },
+    { path: '/items/:id', component: ItemDetailsPage },
     {
       path: '/recommendations',
-      name: 'recommendations',
       component: RecommendationsPage,
       meta: { requiresAuth: true },
     },
     {
       path: '/forum',
-      name: 'forum',
       component: ForumPage,
-      meta: { requiresAuth: true },
     },
     {
       path: '/profile',
-      name: 'profile',
       component: ProfilePage,
       meta: { requiresAuth: true },
     },
-    { path: '/login', name: 'login', component: LoginPage },
-    { path: '/register', name: 'register', component: RegisterPage },
     {
-      path: '/:pathMatch(.*)*',
-      redirect: '/',
+      path: '/login',
+      component: LoginPage,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/register',
+      component: RegisterPage,
+      meta: { guestOnly: true },
+    },
+    {
+      path: '/forum/new',
+      component: NewDiscussionPage,
+      meta: { requiresAuth: true },
+    },
+    {
+      path: '/forum/threads/:id',
+      component: ForumThreadPage,
     },
   ],
 })
 
-router.beforeEach((to) => {
-  const loggedIn = isAuthenticated()
+router.beforeEach(async (to) => {
+  const { initializeAuth, isLoggedIn } = useAuth()
 
-  if (to.meta.requiresAuth && !loggedIn) {
-    return { name: 'login' }
+  await initializeAuth()
+
+  if (to.meta.requiresAuth && !isLoggedIn.value) {
+    return {
+      path: '/login',
+      query: {
+        redirect: to.fullPath,
+      },
+    }
   }
 
-  if ((to.name === 'login' || to.name === 'register') && loggedIn) {
-    return { name: 'profile' }
+  if (to.meta.guestOnly && isLoggedIn.value) {
+    return { path: '/' }
   }
+
+  return true
 })
 
 export default router

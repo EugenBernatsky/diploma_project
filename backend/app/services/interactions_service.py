@@ -20,8 +20,7 @@ def _map_doc_to_interaction_response(doc: dict) -> InteractionResponse:
         id=str(doc["_id"]),
         item_id=str(doc["item_id"]),
         interaction_type=doc["interaction_type"],
-        source=doc.get("source"),
-        value=doc["value"],
+        source=doc.get("source") or "other",
         created_at=doc["created_at"],
     )
 
@@ -39,7 +38,6 @@ async def create_interaction(
         item_id=payload.item_id,
         interaction_type=payload.interaction_type,
         source=payload.source,
-        value=payload.value,
         created_at=datetime.now(UTC),
     )
 

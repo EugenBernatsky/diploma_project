@@ -15,3 +15,8 @@ Thumbs.db
 
 frontend/.env
 debug_payloads/
+
+# ML Data and Models
+datasets/
+models/
+reports/

@@ -43,6 +43,10 @@ from app.services.notifications_service import (
     notify_reply_to_forum_thread,
 )
 from app.utils.avatar import resolve_avatar_id
+from app.repositories.notifications_repository import (
+    delete_notifications_by_post_ids,
+    delete_notifications_by_thread_id,
+)
 
 
 def _normalize_forum_text(text: str) -> str:
@@ -95,9 +99,13 @@ def _map_doc_to_thread_response(doc: dict) -> ForumThreadResponse:
     )
 
 
+def _get_optional_id_str(doc: dict, field_name: str) -> str | None:
+    value = doc.get(field_name)
+    return str(value) if value is not None else None
+
+
 def _get_parent_post_id_str(doc: dict) -> str | None:
-    parent_post_id = doc.get("parent_post_id")
-    return str(parent_post_id) if parent_post_id is not None else None
+    return _get_optional_id_str(doc, "parent_post_id")
 
 
 def _map_doc_to_post_base_response(doc: dict) -> ForumPostBaseResponse:
@@ -113,6 +121,12 @@ def _map_doc_to_post_base_response(doc: dict) -> ForumPostBaseResponse:
         text=doc["text"],
         score=doc.get("score", 0),
         parent_post_id=_get_parent_post_id_str(doc),
+
+        # Нові поля для reply-to-reply.
+        reply_to_post_id=_get_optional_id_str(doc, "reply_to_post_id"),
+        reply_to_user_id=_get_optional_id_str(doc, "reply_to_user_id"),
+        reply_to_username=doc.get("reply_to_username"),
+
         created_at=created_at,
         updated_at=updated_at,
         edited=updated_at > created_at,
@@ -120,40 +134,14 @@ def _map_doc_to_post_base_response(doc: dict) -> ForumPostBaseResponse:
 
 
 def _map_doc_to_post_reply_response(doc: dict) -> ForumPostReplyResponse:
-    created_at = doc["created_at"]
-    updated_at = doc["updated_at"]
-
-    return ForumPostReplyResponse(
-        id=str(doc["_id"]),
-        thread_id=str(doc["thread_id"]),
-        user_id=str(doc["user_id"]),
-        author_username=doc["author_username"],
-        author_avatar_id=_get_author_avatar_id(doc),
-        text=doc["text"],
-        score=doc.get("score", 0),
-        parent_post_id=_get_parent_post_id_str(doc),
-        created_at=created_at,
-        updated_at=updated_at,
-        edited=updated_at > created_at,
-    )
+    base = _map_doc_to_post_base_response(doc)
+    return ForumPostReplyResponse(**base.model_dump())
 
 
 def _map_doc_to_post_response(doc: dict, replies: list[dict]) -> ForumPostResponse:
-    created_at = doc["created_at"]
-    updated_at = doc["updated_at"]
-
+    base = _map_doc_to_post_base_response(doc)
     return ForumPostResponse(
-        id=str(doc["_id"]),
-        thread_id=str(doc["thread_id"]),
-        user_id=str(doc["user_id"]),
-        author_username=doc["author_username"],
-        author_avatar_id=_get_author_avatar_id(doc),
-        text=doc["text"],
-        score=doc.get("score", 0),
-        parent_post_id=_get_parent_post_id_str(doc),
-        created_at=created_at,
-        updated_at=updated_at,
-        edited=updated_at > created_at,
+        **base.model_dump(),
         replies=[_map_doc_to_post_reply_response(reply) for reply in replies],
     )
 
@@ -258,6 +246,7 @@ async def delete_own_thread(
     await delete_posts_by_thread_id(thread_id)
     await delete_votes_for_target("thread", thread_id)
     await delete_votes_for_targets("post", post_ids)
+    await delete_notifications_by_thread_id(thread_id)
 
     return ForumActionResponse(message="Thread deleted successfully")
 
@@ -305,19 +294,32 @@ async def create_thread_post(
     if thread is None:
         raise HTTPException(status_code=404, detail="Thread not found")
 
-    parent_post = None
+    target_post_id = payload.reply_to_post_id or payload.parent_post_id
 
-    if payload.parent_post_id is not None:
-        parent_post = await find_post_by_id(payload.parent_post_id)
+    actual_parent_post_id: str | None = None
+    reply_to_post_id: str | None = None
+    reply_to_user_id: str | None = None
+    reply_to_username: str | None = None
 
-        if parent_post is None:
-            raise HTTPException(status_code=404, detail="Parent post not found")
+    if target_post_id is not None:
+        target_post = await find_post_by_id(target_post_id)
 
-        if str(parent_post["thread_id"]) != thread_id:
-            raise HTTPException(status_code=400, detail="Parent post belongs to another thread")
+        if target_post is None:
+            raise HTTPException(status_code=404, detail="Target post not found")
 
-        if parent_post.get("parent_post_id") is not None:
-            raise HTTPException(status_code=400, detail="Replies to replies are not supported yet")
+        if str(target_post["thread_id"]) != thread_id:
+            raise HTTPException(status_code=400, detail="Target post belongs to another thread")
+
+        target_parent_id = target_post.get("parent_post_id")
+        actual_parent_post_id = (
+            str(target_parent_id)
+            if target_parent_id is not None
+            else str(target_post["_id"])
+        )
+
+        reply_to_post_id = str(target_post["_id"])
+        reply_to_user_id = str(target_post["user_id"])
+        reply_to_username = target_post["author_username"]
 
     user_doc = await find_user_by_id(current_user.id)
     if user_doc is None:
@@ -331,7 +333,13 @@ async def create_thread_post(
         author_username=current_user.username,
         author_avatar_id=resolve_avatar_id(user_doc.get("avatar_id")),
         text=_normalize_forum_text(payload.text),
-        parent_post_id=payload.parent_post_id,
+
+        parent_post_id=actual_parent_post_id,
+
+        reply_to_post_id=reply_to_post_id,
+        reply_to_user_id=reply_to_user_id,
+        reply_to_username=reply_to_username,
+
         created_at=now,
         updated_at=now,
     )
@@ -341,18 +349,15 @@ async def create_thread_post(
     notified_user_ids: set[str] = set()
     thread_owner_id = str(thread["user_id"])
 
-    if parent_post is not None:
-        parent_post_owner_id = str(parent_post["user_id"])
-
-        if parent_post_owner_id != current_user.id:
-            await notify_reply_to_forum_post(
-                recipient_user_id=parent_post_owner_id,
-                replier_username=current_user.username,
-                thread_id=thread_id,
-                thread_title=thread["title"],
-                post_id=str(created_post["_id"]),
-            )
-            notified_user_ids.add(parent_post_owner_id)
+    if reply_to_user_id is not None and reply_to_user_id != current_user.id:
+        await notify_reply_to_forum_post(
+            recipient_user_id=reply_to_user_id,
+            replier_username=current_user.username,
+            thread_id=thread_id,
+            thread_title=thread["title"],
+            post_id=str(created_post["_id"]),
+        )
+        notified_user_ids.add(reply_to_user_id)
 
     if thread_owner_id != current_user.id and thread_owner_id not in notified_user_ids:
         await notify_reply_to_forum_thread(
@@ -411,5 +416,6 @@ async def delete_own_post(
 
     await decrement_thread_replies_count(str(post["thread_id"]), amount=deleted_count)
     await delete_votes_for_targets("post", post_tree_ids)
+    await delete_notifications_by_post_ids(post_tree_ids)
 
     return ForumActionResponse(message="Post deleted successfully")

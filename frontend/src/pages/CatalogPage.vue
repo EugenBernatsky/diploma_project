@@ -2,10 +2,11 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CatalogToolbar from '../components/catalog/CatalogToolbar.vue'
+import type { CatalogViewMode } from '../components/catalog/CatalogToolbar.vue'
 import CatalogFiltersSidebar from '../components/catalog/CatalogFiltersSidebar.vue'
 import CatalogPagination from '../components/catalog/CatalogPagination.vue'
 import MediaItemCard from '../components/catalog/MediaItemCard.vue'
-import { getItems } from '../services/api'
+import { getItems, getItemsCount } from '../services/api'
 import type { Category, MediaItem } from '../types/media'
 import type {
   CatalogCategory,
@@ -23,13 +24,15 @@ import {
 const route = useRoute()
 const router = useRouter()
 
-const allItems = ref<MediaItem[]>([])
+const pageItems = ref<MediaItem[]>([])
+const totalItemsCount = ref(0)
 const isLoading = ref(true)
 const errorText = ref('')
 
 const currentCategory = ref<CatalogCategory>('all')
 const searchQuery = ref('')
 const sortBy = ref<CatalogSort>('popular')
+const viewMode = ref<CatalogViewMode>('grid')
 
 const selectedGenres = ref<string[]>([])
 const selectedYearBucket = ref<YearBucket>('any')
@@ -41,20 +44,6 @@ const itemsPerPage = 12
 
 const applyingRouteState = ref(false)
 const pendingGenresFromRoute = ref<string[] | null>(null)
-
-function uniqueById(items: MediaItem[]) {
-  const seen = new Set<string>()
-  const result: MediaItem[] = []
-
-  for (const item of items) {
-    const key = String(item.id)
-    if (seen.has(key)) continue
-    seen.add(key)
-    result.push(item)
-  }
-
-  return result
-}
 
 function parseCategoryQuery(value: unknown): CatalogCategory {
   if (value === 'movie' || value === 'series' || value === 'book' || value === 'all') {
@@ -73,6 +62,22 @@ function parseGenresQuery(value: unknown): string[] {
     .split(',')
     .map((genre) => genre.trim())
     .filter(Boolean)
+}
+
+function getApiCategory(): Category | undefined {
+  if (currentCategory.value === 'all') {
+    return undefined
+  }
+
+  return currentCategory.value
+}
+
+function areStringArraysEqual(a: string[], b: string[]): boolean {
+  if (a.length !== b.length) {
+    return false
+  }
+
+  return a.every((value, index) => value === b[index])
 }
 
 function applyRouteFilters() {
@@ -107,45 +112,34 @@ async function loadCatalog() {
   errorText.value = ''
 
   try {
-    const categories: Category[] = ['movie', 'series', 'book']
+    const category = getApiCategory()
+    const skip = (currentPage.value - 1) * itemsPerPage
 
-    const results = await Promise.allSettled(
-      categories.map((category) => getItems(category)),
-    )
+    const [items, countResponse] = await Promise.all([
+      getItems({
+        category,
+        limit: itemsPerPage,
+        skip,
+      }),
+      getItemsCount(category),
+    ])
 
-    const successfulItems = results
-      .filter(
-        (result): result is PromiseFulfilledResult<MediaItem[]> =>
-          result.status === 'fulfilled',
-      )
-      .flatMap((result) => result.value)
-
-    if (successfulItems.length === 0) {
-      throw new Error('Catalog data was not loaded from the API.')
-    }
-
-    allItems.value = uniqueById(successfulItems)
+    pageItems.value = items
+    totalItemsCount.value = countResponse.count
   } catch (error) {
     errorText.value =
       error instanceof Error ? error.message : 'Unknown catalog error'
-    allItems.value = []
+    pageItems.value = []
+    totalItemsCount.value = 0
   } finally {
     isLoading.value = false
   }
 }
 
-const categoryItems = computed(() => {
-  if (currentCategory.value === 'all') {
-    return allItems.value
-  }
-
-  return allItems.value.filter((item) => item.category === currentCategory.value)
-})
-
 const availableGenres = computed(() => {
   const set = new Set<string>()
 
-  for (const item of categoryItems.value) {
+  for (const item of pageItems.value) {
     for (const genre of item.genres || []) {
       if (genre?.trim()) {
         set.add(genre.trim())
@@ -159,11 +153,13 @@ const availableGenres = computed(() => {
 const filteredItems = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
-  return categoryItems.value.filter((item) => {
+  return pageItems.value.filter((item) => {
+    const description = item.description ?? ''
+
     const matchesSearch =
       !query ||
       item.title.toLowerCase().includes(query) ||
-      item.description.toLowerCase().includes(query) ||
+      description.toLowerCase().includes(query) ||
       item.genres.some((genre) => genre.toLowerCase().includes(query))
 
     const matchesGenres =
@@ -190,13 +186,10 @@ const sortedItems = computed(() => {
 })
 
 const totalPages = computed(() => {
-  return Math.max(1, Math.ceil(sortedItems.value.length / itemsPerPage))
+  return Math.max(1, Math.ceil(totalItemsCount.value / itemsPerPage))
 })
 
-const paginatedItems = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage
-  return sortedItems.value.slice(start, start + itemsPerPage)
-})
+const shownItemsCount = computed(() => sortedItems.value.length)
 
 function toggleGenre(genre: string) {
   if (selectedGenres.value.includes(genre)) {
@@ -217,26 +210,37 @@ function resetSidebarFilters() {
 function handleCategoryChange(value: CatalogCategory) {
   currentCategory.value = value
   selectedGenres.value = []
+  currentPage.value = 1
 }
 
 watch(
   () => route.query,
   () => {
     applyRouteFilters()
+    currentPage.value = 1
   },
   { deep: true },
 )
 
 watch(availableGenres, (genres) => {
   if (pendingGenresFromRoute.value) {
-    selectedGenres.value = pendingGenresFromRoute.value.filter((genre) =>
+    const nextGenres = pendingGenresFromRoute.value.filter((genre) =>
       genres.includes(genre),
     )
+
+    if (!areStringArraysEqual(selectedGenres.value, nextGenres)) {
+      selectedGenres.value = nextGenres
+    }
+
     pendingGenresFromRoute.value = null
     return
   }
 
-  selectedGenres.value = selectedGenres.value.filter((genre) => genres.includes(genre))
+  const nextGenres = selectedGenres.value.filter((genre) => genres.includes(genre))
+
+  if (!areStringArraysEqual(selectedGenres.value, nextGenres)) {
+    selectedGenres.value = nextGenres
+  }
 })
 
 watch(
@@ -253,7 +257,6 @@ watch(
 
 watch(
   [
-    currentCategory,
     searchQuery,
     sortBy,
     selectedGenres,
@@ -265,6 +268,13 @@ watch(
     currentPage.value = 1
   },
   { deep: true },
+)
+
+watch(
+  [currentCategory, currentPage],
+  () => {
+    loadCatalog()
+  },
 )
 
 watch(totalPages, (pages) => {
@@ -296,14 +306,17 @@ onMounted(async () => {
             :category="currentCategory"
             :search-query="searchQuery"
             :sort-by="sortBy"
+            :view-mode="viewMode"
             @update:category="handleCategoryChange"
             @update:searchQuery="searchQuery = $event"
             @update:sortBy="sortBy = $event"
+            @update:viewMode="viewMode = $event"
           />
 
           <div class="catalog-page__summary">
             <p class="catalog-page__summary-text">
-              <span>{{ sortedItems.length }}</span> items found
+              <span>{{ shownItemsCount }}</span> shown from
+              <span>{{ totalItemsCount }}</span> items
             </p>
 
             <button type="button" class="catalog-page__refresh" @click="loadCatalog">
@@ -315,13 +328,21 @@ onMounted(async () => {
             {{ errorText }}
           </p>
 
-          <div v-if="isLoading" class="catalog-grid">
+          <div
+            v-if="isLoading"
+            class="catalog-grid"
+            :class="{ 'catalog-grid--list': viewMode === 'list' }"
+            >
             <div v-for="index in 12" :key="index" class="catalog-skeleton"></div>
           </div>
 
-          <div v-else-if="paginatedItems.length > 0" class="catalog-grid">
+          <div
+            v-else-if="sortedItems.length > 0"
+            class="catalog-grid"
+            :class="{ 'catalog-grid--list': viewMode === 'list' }"
+            >
             <MediaItemCard
-              v-for="item in paginatedItems"
+              v-for="item in sortedItems"
               :key="item.id"
               :item="item"
             />
@@ -445,6 +466,36 @@ onMounted(async () => {
   gap: 18px;
 }
 
+.catalog-grid--list {
+  grid-template-columns: 1fr;
+}
+
+.catalog-grid--list :deep(.catalog-card) {
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.catalog-grid--list :deep(.catalog-card__poster) {
+  aspect-ratio: auto;
+  min-height: 178px;
+  height: 100%;
+}
+
+.catalog-grid--list :deep(.catalog-card__body) {
+  display: grid;
+  align-content: center;
+  padding: 20px 22px;
+}
+
+.catalog-grid--list :deep(.catalog-card__title) {
+  font-size: 24px;
+}
+
+.catalog-grid--list :deep(.catalog-card__meta) {
+  font-size: 15px;
+}
+
 .catalog-skeleton {
   aspect-ratio: 0.76 / 1.28;
   border-radius: 18px;
@@ -511,6 +562,15 @@ onMounted(async () => {
 
   .catalog-grid {
     grid-template-columns: 1fr;
+  }
+
+  .catalog-grid--list :deep(.catalog-card) {
+  grid-template-columns: 1fr;
+  }
+
+  .catalog-grid--list :deep(.catalog-card__poster) {
+    aspect-ratio: 0.76 / 1;
+    min-height: auto;
   }
 }
 </style>

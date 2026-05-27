@@ -1,18 +1,18 @@
 <script setup lang="ts">
-import type { ForumCategoryType, ForumSortOption } from '../../types/forum'
+import type { ForumCategoryType, ForumThreadSort } from '../../types/forum'
 
 type ForumCategoryFilter = 'all' | ForumCategoryType
 
 defineProps<{
   category: ForumCategoryFilter
   searchQuery: string
-  sortBy: ForumSortOption
+  sortBy: ForumThreadSort
 }>()
 
 const emit = defineEmits<{
   (e: 'update:category', value: ForumCategoryFilter): void
   (e: 'update:searchQuery', value: string): void
-  (e: 'update:sortBy', value: ForumSortOption): void
+  (e: 'update:sortBy', value: ForumThreadSort): void
 }>()
 
 const tabs: Array<{ label: string; value: ForumCategoryFilter }> = [
@@ -23,11 +23,10 @@ const tabs: Array<{ label: string; value: ForumCategoryFilter }> = [
   { label: 'Custom', value: 'custom' },
 ]
 
-const sortOptions: Array<{ label: string; value: ForumSortOption }> = [
-  { label: 'Last Active', value: 'active' },
-  { label: 'Top Score', value: 'top' },
+const sortOptions: Array<{ label: string; value: ForumThreadSort }> = [
+  { label: 'Last Active', value: 'activity' },
   { label: 'Newest', value: 'newest' },
-  { label: 'Most Replies', value: 'replies' },
+  { label: 'Top Score', value: 'score' },
 ]
 </script>
 
@@ -62,30 +61,16 @@ const sortOptions: Array<{ label: string; value: ForumSortOption }> = [
         :value="searchQuery"
         type="text"
         placeholder="Search discussions..."
-        @input="
-          emit(
-            'update:searchQuery',
-            ($event.target as HTMLInputElement).value,
-          )
-        "
+        @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value)"
       />
     </label>
 
     <div class="forum-toolbar__sort">
       <select
         :value="sortBy"
-        @change="
-          emit(
-            'update:sortBy',
-            ($event.target as HTMLSelectElement).value as ForumSortOption,
-          )
-        "
+        @change="emit('update:sortBy', ($event.target as HTMLSelectElement).value as ForumThreadSort)"
       >
-        <option
-          v-for="option in sortOptions"
-          :key="option.value"
-          :value="option.value"
-        >
+        <option v-for="option in sortOptions" :key="option.value" :value="option.value">
           {{ option.label }}
         </option>
       </select>

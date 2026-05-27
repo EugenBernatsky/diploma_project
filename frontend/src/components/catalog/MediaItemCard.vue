@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import type { InteractionSource } from '../../types/interaction'
 import type { MediaItem } from '../../types/media'
 import {
   getCategoryLabel,
@@ -7,10 +8,17 @@ import {
   getItemRating,
   getItemSecondaryMeta,
 } from '../../utils/catalog'
+import { buildItemRoute } from '../../utils/itemRoutes'
 
-const props = defineProps<{
-  item: MediaItem
-}>()
+const props = withDefaults(
+  defineProps<{
+    item: MediaItem
+    source?: InteractionSource
+  }>(),
+  {
+    source: 'catalog',
+  },
+)
 
 const image = getItemImage(props.item)
 const rating = getItemRating(props.item)
@@ -19,7 +27,7 @@ const secondaryMeta = getItemSecondaryMeta(props.item)
 </script>
 
 <template>
-  <RouterLink :to="`/items/${item.id}`" class="catalog-card">
+  <RouterLink :to="buildItemRoute(item.id, source)" class="catalog-card">
     <div class="catalog-card__poster">
       <img :src="image" :alt="item.title" />
 

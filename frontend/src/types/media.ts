@@ -15,6 +15,23 @@ export type MediaProviderLink = {
   url: string
 }
 
+export type MediaItemStatusCounts = {
+  planned: number
+  in_progress: number
+  completed: number
+  dropped: number
+}
+
+export type MediaItemStats = {
+  item_id: string
+  user_rating_average: number | null
+  user_ratings_count: number
+  favorites_count: number
+  statuses_total_count: number
+  status_counts: MediaItemStatusCounts
+  comments_count: number
+}
+
 export type MediaItem = {
   id: string
   title: string

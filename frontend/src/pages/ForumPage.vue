@@ -1,97 +1,95 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import ForumToolbar from '../components/forum/ForumToolbar.vue'
 import ForumTopicCard from '../components/forum/ForumTopicCard.vue'
 import ForumPagination from '../components/forum/ForumPagination.vue'
-import ForumCta from '../components/forum/ForumCta.vue'
-import { forumMockData } from '../mocks/forum'
-import type {
-  ForumCategoryType,
-  ForumMockThread,
-  ForumSortOption,
-} from '../types/forum'
-import {
-  countTodayThreads,
-  formatCompactNumber,
-  sortForumThreads,
-} from '../utils/forum'
+import { getForumThreads } from '../services/forum'
+import type { ForumCategoryType, ForumThreadResponse, ForumThreadSort } from '../types/forum'
 
 type ForumCategoryFilter = 'all' | ForumCategoryType
 
+const threads = ref<ForumThreadResponse[]>([])
+const isLoading = ref(true)
+const errorText = ref('')
+
 const currentCategory = ref<ForumCategoryFilter>('all')
 const searchQuery = ref('')
-const sortBy = ref<ForumSortOption>('active')
+const sortBy = ref<ForumThreadSort>('activity')
 const currentPage = ref(1)
 
 const itemsPerPage = 10
 
-const threads = computed(() => forumMockData.threads)
-const todayTopicsCount = computed(() => countTodayThreads(threads.value))
+async function loadThreads() {
+  isLoading.value = true
+  errorText.value = ''
 
-const filteredThreads = computed<ForumMockThread[]>(() => {
+  try {
+    threads.value = await getForumThreads({
+      limit: 100,
+      sort: sortBy.value,
+      category_type: currentCategory.value === 'all' ? undefined : currentCategory.value,
+    })
+  } catch (error) {
+    errorText.value =
+      error instanceof Error ? error.message : 'Failed to load forum threads.'
+    threads.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+const filteredThreads = computed(() => {
   const query = searchQuery.value.trim().toLowerCase()
 
-  return threads.value.filter((thread) => {
-    const matchesCategory =
-      currentCategory.value === 'all' ||
-      thread.category_type === currentCategory.value
+  if (!query) return threads.value
 
-    const matchesSearch =
-      !query ||
+  return threads.value.filter((thread) => {
+    return (
       thread.title.toLowerCase().includes(query) ||
       thread.text.toLowerCase().includes(query) ||
       thread.author_username.toLowerCase().includes(query) ||
       (thread.custom_category || '').toLowerCase().includes(query)
-
-    return matchesCategory && matchesSearch
+    )
   })
 })
 
-const sortedThreads = computed(() =>
-  sortForumThreads(filteredThreads.value, sortBy.value),
-)
-
 const totalPages = computed(() =>
-  Math.max(1, Math.ceil(sortedThreads.value.length / itemsPerPage)),
+  Math.max(1, Math.ceil(filteredThreads.value.length / itemsPerPage)),
 )
 
 const paginatedThreads = computed(() => {
   const start = (currentPage.value - 1) * itemsPerPage
-  return sortedThreads.value.slice(start, start + itemsPerPage)
+  return filteredThreads.value.slice(start, start + itemsPerPage)
 })
 
-const listSummary = computed(() => {
-  if (!sortedThreads.value.length) {
-    return 'Showing 0 topics'
-  }
+const todayTopicsCount = computed(() => {
+  const now = new Date()
+
+  return threads.value.filter((thread) => {
+    const created = new Date(thread.created_at)
+    return (
+      created.getFullYear() === now.getFullYear() &&
+      created.getMonth() === now.getMonth() &&
+      created.getDate() === now.getDate()
+    )
+  }).length
+})
+
+const summaryLabel = computed(() => {
+  if (!filteredThreads.value.length) return 'Showing 0 topics'
 
   const start = (currentPage.value - 1) * itemsPerPage + 1
-  const end = Math.min(currentPage.value * itemsPerPage, sortedThreads.value.length)
-
-  return `Showing ${start}-${end} of ${sortedThreads.value.length} topics`
+  const end = Math.min(currentPage.value * itemsPerPage, filteredThreads.value.length)
+  return `Showing ${start}-${end} of ${filteredThreads.value.length} topics`
 })
 
-function handleCategoryChange(value: ForumCategoryFilter) {
-  currentCategory.value = value
-}
+watch([currentCategory, sortBy], async () => {
+  currentPage.value = 1
+  await loadThreads()
+})
 
-watchFilters()
-
-function watchFilters() {
-  const sync = () => {
-    currentPage.value = 1
-  }
-
-  ;[currentCategory, searchQuery, sortBy].forEach((source) => {
-    source.value
-  })
-
-  // Vue reactivity via computed watchers below
-}
-
-import { watch } from 'vue'
-
-watch([currentCategory, searchQuery, sortBy], () => {
+watch(searchQuery, () => {
   currentPage.value = 1
 })
 
@@ -99,6 +97,10 @@ watch(totalPages, (pages) => {
   if (currentPage.value > pages) {
     currentPage.value = pages
   }
+})
+
+onMounted(() => {
+  loadThreads()
 })
 </script>
 
@@ -109,10 +111,8 @@ watch(totalPages, (pages) => {
         <div class="forum-page__hero-copy">
           <h1 class="forum-page__title">Community Forum</h1>
           <p class="forum-page__text">
-            Connect with fellow enthusiasts, share your latest discoveries, and dive
-            deep into the media you love. This mock forum uses data shaped close to
-            the backend schema, so switching to real API data later will be much
-            easier.
+            Start real discussions, vote on topics, and reply with the new flat reply
+            model. This page now works against the real forum API.
           </p>
 
           <div class="forum-page__stats">
@@ -122,37 +122,42 @@ watch(totalPages, (pages) => {
             </div>
 
             <div class="forum-page__stat-card">
-              <span class="forum-page__stat-label">Total threads views</span>
-              <strong class="forum-page__stat-value">
-                {{
-                  formatCompactNumber(
-                    threads.reduce((acc, thread) => acc + thread.views, 0),
-                  )
-                }}
-              </strong>
+              <span class="forum-page__stat-label">Loaded topics</span>
+              <strong class="forum-page__stat-value">{{ threads.length }}</strong>
             </div>
           </div>
         </div>
 
-        <button type="button" class="forum-page__new-topic-btn">
+        <RouterLink to="/forum/new" class="forum-page__new-topic-btn">
           + New Discussion
-        </button>
+        </RouterLink>
       </header>
 
       <ForumToolbar
         :category="currentCategory"
         :search-query="searchQuery"
         :sort-by="sortBy"
-        @update:category="handleCategoryChange"
+        @update:category="currentCategory = $event"
         @update:searchQuery="searchQuery = $event"
         @update:sortBy="sortBy = $event"
       />
 
       <div class="forum-page__list-head">
-        <p class="forum-page__summary">{{ listSummary }}</p>
+        <p class="forum-page__summary">{{ summaryLabel }}</p>
       </div>
 
-      <div v-if="paginatedThreads.length" class="forum-page__topics">
+      <div v-if="isLoading" class="forum-page__state">
+        Loading forum threads...
+      </div>
+
+      <div
+        v-else-if="errorText"
+        class="forum-page__state forum-page__state--error"
+      >
+        {{ errorText }}
+      </div>
+
+      <div v-else-if="paginatedThreads.length" class="forum-page__topics">
         <ForumTopicCard
           v-for="thread in paginatedThreads"
           :key="thread.id"
@@ -171,8 +176,6 @@ watch(totalPages, (pages) => {
           @update:page="currentPage = $event"
         />
       </div>
-
-      <ForumCta />
     </div>
   </section>
 </template>
@@ -260,8 +263,11 @@ watch(totalPages, (pages) => {
   border: none;
   background: linear-gradient(135deg, #2563eb 0%, #60a5fa 100%);
   color: #ffffff;
+  text-decoration: none;
   font-weight: 700;
-  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .forum-page__list-head {
@@ -282,13 +288,17 @@ watch(totalPages, (pages) => {
   gap: 14px;
 }
 
+.forum-page__state,
 .forum-page__empty {
   padding: 32px;
   border-radius: 18px;
   border: 1px solid rgba(148, 163, 184, 0.08);
   background: rgba(9, 14, 25, 0.7);
   color: #94a3b8;
-  text-align: center;
+}
+
+.forum-page__state--error {
+  color: #fca5a5;
 }
 
 .forum-page__pagination-wrap {

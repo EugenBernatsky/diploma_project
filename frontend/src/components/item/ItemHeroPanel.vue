@@ -8,17 +8,54 @@ import {
   getOriginalDisplayTitle,
 } from '../../utils/itemDetails'
 import { getItemImage } from '../../utils/catalog'
+import ItemQuickActions from './ItemQuickActions.vue'
+import { useAuth } from '../../services/auth'
+import { createInteraction } from '../../services/interactions'
 
 const props = defineProps<{
   item: MediaItem
+  source?: string | null
 }>()
+
+const emit = defineEmits<{
+  (e: 'stats-changed'): void
+}>()
+
+const { isLoggedIn } = useAuth()
 
 const posterImage = getItemImage(props.item)
 const subtitle = getItemSubtitle(props.item)
 const originalDisplayTitle = getOriginalDisplayTitle(props.item)
 const heroChips = getHeroChips(props.item)
 const heroFacts = getHeroFacts(props.item)
-const actions = getItemActions(props.item)
+const actions = getItemActions(props.item).filter((action) => {
+  const label = action.label.toLowerCase()
+  const homepage = props.item.homepage?.trim()
+
+  if (homepage && action.href === homepage) {
+    return false
+  }
+
+  if (label.includes('homepage')) {
+    return false
+  }
+
+  return true
+})
+
+function trackExternalActionClick() {
+  if (!isLoggedIn.value) {
+    return
+  }
+
+  void createInteraction({
+    item_id: props.item.id,
+    interaction_type: 'external_link_click',
+    source: 'item_page',
+  }).catch(() => {
+    // external links should stay fast even if tracking fails
+  })
+}
 </script>
 
 <template>
@@ -34,28 +71,36 @@ const actions = getItemActions(props.item)
     </div>
 
     <div class="item-hero__layout">
-      <div class="item-hero__poster-column">
-        <div class="item-hero__poster">
-          <img :src="posterImage" :alt="item.title" />
-        </div>
+        <div class="item-hero__poster-column">
+            <div class="item-hero__poster">
+              <img :src="posterImage" :alt="item.title" />
+            </div>
 
-        <div v-if="actions.length" class="item-hero__actions">
-          <a
-            v-for="action in actions"
-            :key="`${action.label}-${action.href}`"
-            :href="action.href"
-            target="_blank"
-            rel="noreferrer"
-            class="item-hero__action"
-            :class="{
-              'item-hero__action--primary': action.variant === 'primary',
-              'item-hero__action--secondary': action.variant === 'secondary',
-            }"
-          >
-            {{ action.label }}
-          </a>
-        </div>
-      </div>
+            <ItemQuickActions
+              :item-id="item.id"
+              :homepage-url="item.homepage"
+              :source="source"
+              @changed="emit('stats-changed')"
+            />
+
+            <div v-if="actions.length" class="item-hero__actions">
+              <a
+                v-for="action in actions"
+                :key="`${action.label}-${action.href}`"
+                :href="action.href"
+                target="_blank"
+                rel="noreferrer"
+                class="item-hero__action"
+                :class="{
+                  'item-hero__action--primary': action.variant === 'primary',
+                  'item-hero__action--secondary': action.variant === 'secondary',
+                }"
+                @click="trackExternalActionClick"
+              >
+                {{ action.label }}
+              </a>
+            </div>
+          </div>
 
       <div class="item-hero__content">
         <div v-if="heroChips.length" class="item-hero__chips">

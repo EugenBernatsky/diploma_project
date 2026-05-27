@@ -1,31 +1,93 @@
-import type { Category, MediaItem, MediaItemId } from '../types/media'
+import { apiRequest } from './http'
+import type {
+  Category,
+  MediaItem,
+  MediaItemId,
+  MediaItemStats,
+} from '../types/media'
 
 export type HealthResponse = {
   status: string
 }
 
-const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/+$/, '')
+export async function checkHealth(): Promise<HealthResponse> {
+  return apiRequest<HealthResponse>('/health', {
+    auth: false,
+  })
+}
 
-async function requestJson<T>(path: string): Promise<T> {
-  const response = await fetch(`${API_BASE_URL}${path}`)
+export type GetItemsParams = {
+  category?: Category
+  limit?: number
+  skip?: number
+}
 
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`)
+export type ItemsCountResponse = {
+  count: number
+}
+
+function buildItemsQuery(params?: GetItemsParams): string {
+  const search = new URLSearchParams()
+
+  if (params?.category) {
+    search.set('category', params.category)
   }
 
-  return response.json() as Promise<T>
+  if (typeof params?.limit === 'number') {
+    search.set('limit', String(params.limit))
+  }
+
+  if (typeof params?.skip === 'number') {
+    search.set('skip', String(params.skip))
+  }
+
+  return search.toString()
 }
 
-export async function checkHealth(): Promise<HealthResponse> {
-  return requestJson<HealthResponse>('/health')
+export async function getItems(
+  categoryOrParams?: Category | GetItemsParams,
+): Promise<MediaItem[]> {
+  const params: GetItemsParams =
+    typeof categoryOrParams === 'string'
+      ? { category: categoryOrParams }
+      : categoryOrParams ?? {}
+
+  const query = buildItemsQuery(params)
+  const suffix = query ? `?${query}` : ''
+
+  return apiRequest<MediaItem[]>(`/items${suffix}`, {
+    auth: false,
+  })
 }
 
-export async function getItems(category: Category): Promise<MediaItem[]> {
-  return requestJson<MediaItem[]>(`/items?category=${category}`)
+export async function getItemsCount(
+  category?: Category,
+): Promise<ItemsCountResponse> {
+  const suffix = category ? `?category=${encodeURIComponent(category)}` : ''
+
+  return apiRequest<ItemsCountResponse>(`/items/count${suffix}`, {
+    auth: false,
+  })
 }
 
 export async function getItemById(itemId: MediaItemId): Promise<MediaItem> {
-  return requestJson<MediaItem>(`/items/${itemId}`)
+  return apiRequest<MediaItem>(
+    `/items/${encodeURIComponent(String(itemId))}`,
+    {
+      auth: false,
+    },
+  )
+}
+
+export async function getItemStats(
+  itemId: MediaItemId,
+): Promise<MediaItemStats> {
+  return apiRequest<MediaItemStats>(
+    `/items/${encodeURIComponent(String(itemId))}/stats`,
+    {
+      auth: false,
+    },
+  )
 }
 
 function sortItemsForHome(items: MediaItem[]): MediaItem[] {
@@ -67,7 +129,9 @@ function interleaveGroups(groups: MediaItem[][], limit: number): MediaItem[] {
 export async function getHomeShowcaseItems(limit = 5): Promise<MediaItem[]> {
   const categories: Category[] = ['movie', 'series', 'book']
 
-  const results = await Promise.allSettled(categories.map((category) => getItems(category)))
+  const results = await Promise.allSettled(
+    categories.map((category) => getItems(category)),
+  )
 
   const successfulGroups = results
     .filter(

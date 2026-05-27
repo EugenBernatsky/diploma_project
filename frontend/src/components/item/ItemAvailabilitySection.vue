@@ -1,10 +1,16 @@
 <script setup lang="ts">
+import { computed } from 'vue'
+import { useAuth } from '../../services/auth'
+import { createInteraction } from '../../services/interactions'
 import type { MediaProviderLink } from '../../types/media'
 
 const props = defineProps<{
+  itemId: string
   watchLinks: MediaProviderLink[]
   purchaseLinks: MediaProviderLink[]
 }>()
+
+const { isLoggedIn } = useAuth()
 
 function formatProviderType(value: string): string {
   const normalized = value.trim().toLowerCase()
@@ -21,7 +27,23 @@ function formatProviderType(value: string): string {
     .replace(/\b\w/g, (char) => char.toUpperCase())
 }
 
-const hasAnyLinks = props.watchLinks.length > 0 || props.purchaseLinks.length > 0
+function trackExternalLinkClick() {
+  if (!isLoggedIn.value) {
+    return
+  }
+
+  void createInteraction({
+    item_id: props.itemId,
+    interaction_type: 'external_link_click',
+    source: 'item_page',
+  }).catch(() => {
+    // interaction logging should not block user navigation
+  })
+}
+
+const hasAnyLinks = computed(() => {
+  return props.watchLinks.length > 0 || props.purchaseLinks.length > 0
+})
 </script>
 
 <template>
@@ -58,6 +80,7 @@ const hasAnyLinks = props.watchLinks.length > 0 || props.purchaseLinks.length > 
           target="_blank"
           rel="noreferrer"
           class="item-availability__button"
+          @click="trackExternalLinkClick"
         >
           Open Link
         </a>
@@ -94,6 +117,7 @@ const hasAnyLinks = props.watchLinks.length > 0 || props.purchaseLinks.length > 
           target="_blank"
           rel="noreferrer"
           class="item-availability__button"
+          @click="trackExternalLinkClick"
         >
           Open Link
         </a>

@@ -72,3 +72,13 @@ async def delete_favorites_by_item_id(item_id: str) -> int:
 
     result = await db.favorites.delete_many({"item_id": ObjectId(item_id)})
     return result.deleted_count
+
+async def count_favorites_by_item_id(item_id: str) -> int:
+    if not ObjectId.is_valid(item_id):
+        return 0
+
+    db = get_db()
+
+    return await db.favorites.count_documents(
+        {"item_id": ObjectId(item_id)}
+    )

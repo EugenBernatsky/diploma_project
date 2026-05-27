@@ -122,3 +122,34 @@ async def delete_notifications_by_item_id(item_id: str) -> int:
 
     result = await db.notifications.delete_many({"item_id": ObjectId(item_id)})
     return result.deleted_count
+
+async def delete_notifications_by_thread_id(thread_id: str) -> int:
+    if not ObjectId.is_valid(thread_id):
+        return 0
+
+    db = get_db()
+
+    result = await db.notifications.delete_many(
+        {"thread_id": ObjectId(thread_id)}
+    )
+
+    return result.deleted_count
+
+
+async def delete_notifications_by_post_ids(post_ids: list[str]) -> int:
+    valid_post_ids = [
+        ObjectId(post_id)
+        for post_id in post_ids
+        if ObjectId.is_valid(post_id)
+    ]
+
+    if not valid_post_ids:
+        return 0
+
+    db = get_db()
+
+    result = await db.notifications.delete_many(
+        {"post_id": {"$in": valid_post_ids}}
+    )
+
+    return result.deleted_count

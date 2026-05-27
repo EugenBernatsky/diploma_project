@@ -37,6 +37,9 @@ async def insert_comment(
     author_avatar_id: str,
     text: str,
     parent_comment_id: str | None,
+    reply_to_comment_id: str | None,
+    reply_to_user_id: str | None,
+    reply_to_username: str | None,
     created_at: datetime,
     updated_at: datetime,
 ) -> dict:
@@ -48,7 +51,15 @@ async def insert_comment(
         "author_username": author_username,
         "author_avatar_id": author_avatar_id,
         "text": text,
+
+        # Для групування в один рівень вкладеності.
         "parent_comment_id": ObjectId(parent_comment_id) if parent_comment_id else None,
+
+        # Для точного адресата відповіді.
+        "reply_to_comment_id": ObjectId(reply_to_comment_id) if reply_to_comment_id else None,
+        "reply_to_user_id": ObjectId(reply_to_user_id) if reply_to_user_id else None,
+        "reply_to_username": reply_to_username,
+
         "created_at": created_at,
         "updated_at": updated_at,
     }
@@ -112,3 +123,13 @@ async def delete_comments_by_item_id(item_id: str) -> int:
 
     result = await db.comments.delete_many({"item_id": ObjectId(item_id)})
     return result.deleted_count
+
+async def count_comments_by_item_id(item_id: str) -> int:
+    if not ObjectId.is_valid(item_id):
+        return 0
+
+    db = get_db()
+
+    return await db.comments.count_documents(
+        {"item_id": ObjectId(item_id)}
+    )

@@ -1,13 +1,43 @@
 <script setup lang="ts">
-import { ref } from 'vue'
-import RecommendationShelf from './RecommendationShelf.vue'
-import type { RecommendationGroup as RecommendationGroupType } from '../../utils/recommendations'
+import { computed, ref } from 'vue'
+import type { InteractionSource } from '../../types/interaction'
+import type { RecommendationSection } from '../../types/recommendations'
+import RecommendationCard from './RecommendationCard.vue'
+import RecommendationStatusHint from './RecommendationStatusHint.vue'
 
-defineProps<{
-  group: RecommendationGroupType
-}>()
+const props = withDefaults(
+  defineProps<{
+    section: RecommendationSection
+    source?: InteractionSource
+  }>(),
+  {
+    source: 'recommendations',
+  },
+)
 
 const isOpen = ref(true)
+
+const hasItems = computed(() => props.section.items.length > 0)
+
+const algorithmLabel = computed(() => {
+  return props.section.algorithm.replace(/_/g, ' ')
+})
+
+const emptyText = computed(() => {
+  if (props.section.status === 'waiting_for_more_user_data') {
+    return 'This section will appear after more users rate media items.'
+  }
+
+  if (props.section.status === 'model_not_trained') {
+    return 'Recommendations are temporarily unavailable.'
+  }
+
+  if (props.section.status === 'unavailable') {
+    return 'No recommendations available right now.'
+  }
+
+  return 'No items in this section yet.'
+})
 </script>
 
 <template>
@@ -24,23 +54,35 @@ const isOpen = ref(true)
 
         <div>
           <div class="recommendations-group__title-row">
-            <h2 class="recommendations-group__title">{{ group.title }}</h2>
-            <span class="recommendations-group__badge">{{ group.badge }}</span>
-          </div>
+            <h2 class="recommendations-group__title">{{ section.title }}</h2>
 
-          <p class="recommendations-group__subtitle">
-            {{ group.subtitle }}
-          </p>
+            <span class="recommendations-group__badge">
+              {{ section.status }}
+            </span>
+
+            <span class="recommendations-group__algorithm">
+              {{ algorithmLabel }}
+            </span>
+          </div>
         </div>
       </div>
     </button>
 
     <div v-if="isOpen" class="recommendations-group__content">
-      <RecommendationShelf
-        v-for="shelf in group.shelves"
-        :key="shelf.id"
-        :shelf="shelf"
-      />
+      <RecommendationStatusHint :status="section.status" />
+
+      <div v-if="hasItems" class="recommendations-group__grid">
+        <RecommendationCard
+          v-for="recommendation in section.items"
+          :key="recommendation.item.id"
+          :recommendation="recommendation"
+          :source="source"
+        />
+      </div>
+
+      <div v-else class="recommendations-group__empty">
+        {{ emptyText }}
+      </div>
     </div>
   </section>
 </template>
@@ -95,7 +137,8 @@ const isOpen = ref(true)
   letter-spacing: -0.03em;
 }
 
-.recommendations-group__badge {
+.recommendations-group__badge,
+.recommendations-group__algorithm {
   padding: 5px 10px;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.82);
@@ -104,18 +147,53 @@ const isOpen = ref(true)
   font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
-.recommendations-group__subtitle {
-  max-width: 900px;
-  margin: 0;
-  color: #94a3b8;
-  font-size: 15px;
-  line-height: 1.7;
+.recommendations-group__algorithm {
+  color: #bfdbfe;
+  background: rgba(37, 99, 235, 0.12);
 }
 
 .recommendations-group__content {
   display: grid;
-  gap: 26px;
+  gap: 16px;
+}
+
+.recommendations-group__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.recommendations-group__empty {
+  padding: 24px;
+  border-radius: 18px;
+  border: 1px dashed rgba(148, 163, 184, 0.18);
+  background: rgba(15, 23, 42, 0.48);
+  color: #94a3b8;
+  line-height: 1.7;
+}
+
+@media (max-width: 1100px) {
+  .recommendations-group__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .recommendations-group__grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .recommendations-group__title {
+    font-size: 28px;
+  }
+}
+
+@media (max-width: 520px) {
+  .recommendations-group__grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

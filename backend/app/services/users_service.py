@@ -22,6 +22,7 @@ def map_doc_to_user_public(doc: dict) -> UserPublic:
         email=doc["email"],
         role=doc["role"],
         is_active=doc["is_active"],
+        email_verified=doc.get("email_verified", False),
         created_at=doc["created_at"],
     )
 
@@ -43,6 +44,12 @@ async def create_user(user: UserCreate, role: UserRole = "user") -> UserPublic:
         "password_hash": hash_password(user.password),
         "role": role,
         "is_active": True,
+        "email_verified": False,
+        "email_verification_code_hash": None,
+        "email_verification_expires_at": None,
+        "email_verification_sent_at": None,
+        "email_verification_attempts": 0,
+        "username_updated_at": None,
         "avatar_id": DEFAULT_AVATAR_ID,
         "notification_settings": get_default_notification_settings(),
         "created_at": now,
@@ -51,3 +58,4 @@ async def create_user(user: UserCreate, role: UserRole = "user") -> UserPublic:
 
     created_user = await insert_user(user_data)
     return map_doc_to_user_public(created_user)
+

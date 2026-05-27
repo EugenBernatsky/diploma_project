@@ -25,11 +25,19 @@ from app.services.notifications_service import (
     notify_forum_thread_deleted_by_admin,
 )
 from app.utils.avatar import resolve_avatar_id
+from app.repositories.notifications_repository import (
+    delete_notifications_by_post_ids,
+    delete_notifications_by_thread_id,
+)
+
+
+def _get_optional_id_str(doc: dict, field_name: str) -> str | None:
+    value = doc.get(field_name)
+    return str(value) if value is not None else None
 
 
 def _get_parent_post_id_str(doc: dict) -> str | None:
-    parent_post_id = doc.get("parent_post_id")
-    return str(parent_post_id) if parent_post_id is not None else None
+    return _get_optional_id_str(doc, "parent_post_id")
 
 
 def _get_author_avatar_id(doc: dict) -> str:
@@ -47,6 +55,8 @@ def _map_doc_to_thread_response(doc: dict) -> ForumThreadResponse:
         author_avatar_id=_get_author_avatar_id(doc),
         title=doc["title"],
         text=doc["text"],
+        category_type=doc.get("category_type", "custom"),
+        custom_category=doc.get("custom_category"),
         score=doc.get("score", 0),
         replies_count=doc["replies_count"],
         created_at=created_at,
@@ -69,6 +79,12 @@ def _map_doc_to_post_base_response(doc: dict) -> ForumPostBaseResponse:
         text=doc["text"],
         score=doc.get("score", 0),
         parent_post_id=_get_parent_post_id_str(doc),
+
+        # Нові поля для reply-to-reply.
+        reply_to_post_id=_get_optional_id_str(doc, "reply_to_post_id"),
+        reply_to_user_id=_get_optional_id_str(doc, "reply_to_user_id"),
+        reply_to_username=doc.get("reply_to_username"),
+
         created_at=created_at,
         updated_at=updated_at,
         edited=updated_at > created_at,
@@ -105,6 +121,7 @@ async def admin_delete_thread(current_admin: UserPublic, thread_id: str) -> Foru
     await delete_posts_by_thread_id(thread_id)
     await delete_votes_for_target("thread", thread_id)
     await delete_votes_for_targets("post", post_ids)
+    await delete_notifications_by_thread_id(thread_id)
 
     if thread_owner_id != current_admin.id:
         await notify_forum_thread_deleted_by_admin(
@@ -152,6 +169,7 @@ async def admin_delete_post(current_admin: UserPublic, post_id: str) -> ForumAct
 
     await decrement_thread_replies_count(str(post["thread_id"]), amount=deleted_count)
     await delete_votes_for_targets("post", post_tree_ids)
+    await delete_notifications_by_post_ids(post_tree_ids)
 
     notified_users = {current_admin.id}
 

@@ -90,3 +90,42 @@ async def delete_ratings_by_item_id(item_id: str) -> int:
 
     result = await db.ratings.delete_many({"item_id": ObjectId(item_id)})
     return result.deleted_count
+
+async def get_rating_stats_by_item_id(item_id: str) -> dict:
+    if not ObjectId.is_valid(item_id):
+        return {
+            "average": None,
+            "count": 0,
+        }
+
+    db = get_db()
+
+    cursor = await db.ratings.aggregate(
+        [
+            {
+                "$match": {
+                    "item_id": ObjectId(item_id),
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$item_id",
+                    "average": {"$avg": "$score"},
+                    "count": {"$sum": 1},
+                }
+            },
+        ]
+    )
+
+    docs = await cursor.to_list(length=1)
+
+    if not docs:
+        return {
+            "average": None,
+            "count": 0,
+        }
+
+    return {
+        "average": round(float(docs[0]["average"]), 2),
+        "count": int(docs[0]["count"]),
+    }

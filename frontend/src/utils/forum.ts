@@ -1,7 +1,7 @@
 import type {
   ForumCategoryType,
-  ForumMockThread,
-  ForumSortOption,
+  ForumThreadResponse,
+  ForumThreadSort,
 } from '../types/forum'
 
 export function getForumCategoryLabel(
@@ -54,17 +54,13 @@ export function formatCompactNumber(value: number): string {
 }
 
 export function sortForumThreads(
-  threads: ForumMockThread[],
-  sortBy: ForumSortOption,
-): ForumMockThread[] {
+  threads: ForumThreadResponse[],
+  sortBy: ForumThreadSort,
+): ForumThreadResponse[] {
   const items = [...threads]
 
-  if (sortBy === 'top') {
+  if (sortBy === 'score') {
     return items.sort((a, b) => b.score - a.score)
-  }
-
-  if (sortBy === 'replies') {
-    return items.sort((a, b) => b.replies_count - a.replies_count)
   }
 
   if (sortBy === 'newest') {
@@ -81,7 +77,7 @@ export function sortForumThreads(
   )
 }
 
-export function countTodayThreads(threads: ForumMockThread[]): number {
+export function countTodayThreads(threads: ForumThreadResponse[]): number {
   const now = new Date()
   const year = now.getFullYear()
   const month = now.getMonth()

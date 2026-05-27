@@ -1,16 +1,19 @@
 <script setup lang="ts">
 import type { CatalogCategory, CatalogSort } from '../../utils/catalog'
+export type CatalogViewMode = 'grid' | 'list'
 
 const props = defineProps<{
   category: CatalogCategory
   searchQuery: string
   sortBy: CatalogSort
+  viewMode: CatalogViewMode
 }>()
 
 const emit = defineEmits<{
   (e: 'update:category', value: CatalogCategory): void
   (e: 'update:searchQuery', value: string): void
   (e: 'update:sortBy', value: CatalogSort): void
+  (e: 'update:viewMode', value: CatalogViewMode): void
 }>()
 
 const tabs: Array<{ label: string; value: CatalogCategory }> = [
@@ -75,10 +78,25 @@ const sortOptions: Array<{ label: string; value: CatalogSort }> = [
     </div>
 
     <div class="catalog-toolbar__view-buttons">
-      <button type="button" class="catalog-toolbar__view-btn catalog-toolbar__view-btn--active">
+      <button
+        type="button"
+        class="catalog-toolbar__view-btn"
+        :class="{ 'catalog-toolbar__view-btn--active': props.viewMode === 'grid' }"
+        aria-label="Grid view"
+        @click="emit('update:viewMode', 'grid')"
+      >
         ⊞
       </button>
-      <button type="button" class="catalog-toolbar__view-btn">☰</button>
+
+      <button
+        type="button"
+        class="catalog-toolbar__view-btn"
+        :class="{ 'catalog-toolbar__view-btn--active': props.viewMode === 'list' }"
+        aria-label="List view"
+        @click="emit('update:viewMode', 'list')"
+      >
+        ☰
+      </button>
     </div>
   </div>
 </template>

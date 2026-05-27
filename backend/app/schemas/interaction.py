@@ -1,22 +1,27 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 InteractionType = Literal[
-    "view",
-    "open_details",
-    "search_click",
-    "recommendation_click",
+    "item_view",
+    "trailer_click",
+    "external_link_click",
 ]
+
 
 InteractionSource = Literal[
     "catalog",
     "search",
     "recommendations",
+    "similar_items",
     "favorites",
     "statuses",
+    "home",
+    "item_page",
+    "profile",
+    "forum",
     "other",
 ]
 
@@ -24,16 +29,14 @@ InteractionSource = Literal[
 class InteractionCreate(BaseModel):
     item_id: str
     interaction_type: InteractionType
-    source: InteractionSource | None = None
-    value: int = Field(default=1, ge=1, le=10)
+    source: InteractionSource = "other"
 
 
 class InteractionResponse(BaseModel):
     id: str
     item_id: str
     interaction_type: InteractionType
-    source: InteractionSource | None
-    value: int
+    source: InteractionSource
     created_at: datetime
 
 

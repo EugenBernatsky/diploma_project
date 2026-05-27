@@ -98,3 +98,32 @@ async def delete_statuses_by_item_id(item_id: str) -> int:
 
     result = await db.item_statuses.delete_many({"item_id": ObjectId(item_id)})
     return result.deleted_count
+
+async def count_statuses_by_item_id(item_id: str) -> dict[str, int]:
+    if not ObjectId.is_valid(item_id):
+        return {}
+
+    db = get_db()
+
+    cursor = await db.item_statuses.aggregate(
+        [
+            {
+                "$match": {
+                    "item_id": ObjectId(item_id),
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$status",
+                    "count": {"$sum": 1},
+                }
+            },
+        ]
+    )
+
+    docs = await cursor.to_list(length=20)
+
+    return {
+        str(doc["_id"]): int(doc["count"])
+        for doc in docs
+    }

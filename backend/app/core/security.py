@@ -1,5 +1,8 @@
 from datetime import UTC, datetime, timedelta
 
+import hashlib
+import hmac
+
 import jwt
 from pwdlib import PasswordHash
 
@@ -30,3 +33,15 @@ def create_access_token(subject: str, expires_minutes: int | None = None) -> str
         settings.JWT_SECRET_KEY,
         algorithm=settings.JWT_ALGORITHM,
     )
+
+def hash_verification_code(code: str) -> str:
+    return hmac.new(
+        settings.JWT_SECRET_KEY.encode("utf-8"),
+        code.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def verify_verification_code(code: str, hashed_code: str) -> bool:
+    expected_hash = hash_verification_code(code)
+    return hmac.compare_digest(expected_hash, hashed_code)

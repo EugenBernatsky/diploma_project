@@ -43,8 +43,14 @@ class ForumThreadUpdate(BaseModel):
 
 class ForumPostCreate(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
+
+    # Старе поле залишаємо для сумісності з поточним фронтом.
+    # Backend буде сприймати його як "пост, на який натиснули Reply".
     parent_post_id: str | None = None
 
+    # Нове бажане поле для нової логіки.
+    # Це конкретний пост, на який відповідаємо.
+    reply_to_post_id: str | None = None
 
 class ForumPostUpdate(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
@@ -75,7 +81,20 @@ class ForumPostBaseResponse(BaseModel):
     author_avatar_id: str
     text: str
     score: int
+
+    # ID головного поста, під яким лежить відповідь.
+    # Для top-level post буде None.
     parent_post_id: str | None
+
+    # ID конкретного поста, на який натиснули Reply.
+    reply_to_post_id: str | None = None
+
+    # ID користувача, якому відповіли.
+    reply_to_user_id: str | None = None
+
+    # Username користувача, якому відповіли.
+    reply_to_username: str | None = None
+
     created_at: datetime
     updated_at: datetime
     edited: bool

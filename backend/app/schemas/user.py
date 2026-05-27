@@ -19,6 +19,7 @@ class UserPublic(BaseModel):
     email: EmailStr
     role: UserRole
     is_active: bool
+    email_verified: bool = False
     created_at: datetime
 
 
@@ -29,5 +30,6 @@ class UserInDB(BaseModel):
     password_hash: str
     role: UserRole
     is_active: bool
+    email_verified: bool = False
     created_at: datetime
     updated_at: datetime

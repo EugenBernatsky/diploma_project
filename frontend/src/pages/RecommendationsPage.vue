@@ -1,70 +1,45 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import RecommendationsHero from '../components/recommendations/RecommendationsHero.vue'
+import RecommendationCategoryFilter from '../components/recommendations/RecommendationCategoryFilter.vue'
 import RecommendationsGroup from '../components/recommendations/RecommendationsGroup.vue'
-import { getItems } from '../services/api'
-import type { MediaItem } from '../types/media'
-import { buildRecommendationGroups } from '../utils/recommendations'
+import RecommendationsHero from '../components/recommendations/RecommendationsHero.vue'
+import { getRecommendations } from '../services/recommendations'
+import type { Category } from '../types/media'
+import type { RecommendationSection } from '../types/recommendations'
+
+const RECOMMENDATIONS_LIMIT = 12
 
 const isLoading = ref(true)
 const errorText = ref('')
-const refreshSeed = ref(0)
+const selectedCategory = ref<Category | null>(null)
+const sections = ref<RecommendationSection[]>([])
 const lastUpdatedAt = ref<Date | null>(null)
 
-const catalogBuckets = ref<{
-  movie: MediaItem[]
-  series: MediaItem[]
-  book: MediaItem[]
-}>({
-  movie: [],
-  series: [],
-  book: [],
-})
-
-async function loadRecommendationSources() {
-  isLoading.value = true
-  errorText.value = ''
-
-  try {
-    const [movies, series, books] = await Promise.all([
-      getItems('movie'),
-      getItems('series'),
-      getItems('book'),
-    ])
-
-    catalogBuckets.value = {
-      movie: movies,
-      series,
-      book: books,
+const visibleSections = computed(() => {
+  return sections.value.filter((section) => {
+    if (section.items.length > 0) {
+      return true
     }
 
-    lastUpdatedAt.value = new Date()
-  } catch (error) {
-    errorText.value =
-      error instanceof Error
-        ? error.message
-        : 'Failed to load recommendation sources.'
-  } finally {
-    isLoading.value = false
-  }
-}
-
-const recommendationGroups = computed(() => {
-  return buildRecommendationGroups(catalogBuckets.value, refreshSeed.value).filter(
-    (group) => group.shelves.length > 0,
-  )
+    return [
+      'cold_start_fallback',
+      'personalized_fallback',
+      'waiting_for_more_user_data',
+      'model_not_trained',
+    ].includes(section.status)
+  })
 })
 
 const totalItemsLoaded = computed(() => {
-  return (
-    catalogBuckets.value.movie.length +
-    catalogBuckets.value.series.length +
-    catalogBuckets.value.book.length
-  )
+  return sections.value.reduce((total, section) => {
+    return total + section.items.length
+  }, 0)
 })
 
 const lastUpdatedLabel = computed(() => {
-  if (!lastUpdatedAt.value) return 'Not refreshed yet'
+  if (!lastUpdatedAt.value) {
+    return 'Not refreshed yet'
+  }
 
   return `Updated ${lastUpdatedAt.value.toLocaleTimeString('en-GB', {
     hour: '2-digit',
@@ -72,13 +47,45 @@ const lastUpdatedLabel = computed(() => {
   })}`
 })
 
+async function loadRecommendations() {
+  isLoading.value = true
+  errorText.value = ''
+
+  try {
+    const response = await getRecommendations({
+      limit: RECOMMENDATIONS_LIMIT,
+      category: selectedCategory.value,
+    })
+
+    sections.value = response.sections
+    lastUpdatedAt.value = new Date()
+  } catch (error) {
+    errorText.value =
+      error instanceof Error
+        ? error.message
+        : 'Recommendations are temporarily unavailable.'
+
+    sections.value = []
+  } finally {
+    isLoading.value = false
+  }
+}
+
+function handleCategoryChange(category: Category | null) {
+  if (selectedCategory.value === category) {
+    return
+  }
+
+  selectedCategory.value = category
+  loadRecommendations()
+}
+
 function refreshRecommendations() {
-  refreshSeed.value += 1
-  lastUpdatedAt.value = new Date()
+  loadRecommendations()
 }
 
 onMounted(() => {
-  loadRecommendationSources()
+  loadRecommendations()
 })
 </script>
 
@@ -87,12 +94,20 @@ onMounted(() => {
     <div class="recommendations-page__inner">
       <RecommendationsHero
         :total-items="totalItemsLoaded"
+        :sections-count="sections.length"
         :last-updated-label="lastUpdatedLabel"
+        :is-refreshing="isLoading"
         @refresh="refreshRecommendations"
       />
 
+      <RecommendationCategoryFilter
+        :selected-category="selectedCategory"
+        :is-loading="isLoading"
+        @change="handleCategoryChange"
+      />
+
       <div v-if="isLoading" class="recommendations-page__state">
-        Loading recommendation shelves...
+        Loading recommendations...
       </div>
 
       <div
@@ -103,25 +118,38 @@ onMounted(() => {
       </div>
 
       <template v-else>
-        <RecommendationsGroup
-          v-for="group in recommendationGroups"
-          :key="group.id"
-          :group="group"
-        />
+        <div
+          v-if="visibleSections.length"
+          class="recommendations-page__sections"
+        >
+          <RecommendationsGroup
+            v-for="section in visibleSections"
+            :key="section.key"
+            :section="section"
+            source="recommendations"
+          />
+        </div>
+
+        <div v-else class="recommendations-page__state">
+          No recommendations available right now. Try rating, saving or opening
+          more media items.
+        </div>
 
         <section class="recommendations-page__cta">
           <div>
             <h2 class="recommendations-page__cta-title">
-              Not finding what you’re looking for?
+              Want better recommendations?
             </h2>
+
             <p class="recommendations-page__cta-text">
-              Explore the full catalog or jump into the forum and compare notes with
-              other users while the real recommendation engine is still being wired in.
+              Rate items, add media to favorites, update your watch/read statuses
+              and open items from the catalog. These actions help the backend
+              improve your personal recommendation profile.
             </p>
           </div>
 
-          <RouterLink to="/forum" class="recommendations-page__cta-link">
-            Visit Community Forum
+          <RouterLink to="/catalog" class="recommendations-page__cta-link">
+            Explore Catalog
           </RouterLink>
         </section>
       </template>
@@ -142,12 +170,18 @@ onMounted(() => {
   gap: 30px;
 }
 
+.recommendations-page__sections {
+  display: grid;
+  gap: 30px;
+}
+
 .recommendations-page__state {
   padding: 32px;
   border-radius: 22px;
   background: rgba(8, 14, 24, 0.9);
   border: 1px solid rgba(148, 163, 184, 0.08);
   color: #cbd5e1;
+  line-height: 1.7;
 }
 
 .recommendations-page__state--error {

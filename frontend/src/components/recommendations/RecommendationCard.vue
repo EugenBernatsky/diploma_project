@@ -1,25 +1,96 @@
 <script setup lang="ts">
+import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
+import type { InteractionSource } from '../../types/interaction'
 import type { MediaItem } from '../../types/media'
-import { getItemImage, getItemSecondaryMeta, getItemRating } from '../../utils/catalog'
+import type { RecommendationItem } from '../../types/recommendations'
+import {
+  getItemImage,
+  getItemRating,
+  getItemSecondaryMeta,
+} from '../../utils/catalog'
 
-const props = defineProps<{
-  item: MediaItem
-  badge?: string
-}>()
+const props = withDefaults(
+  defineProps<{
+    recommendation?: RecommendationItem
+    item?: MediaItem
+    badge?: string
+    source?: InteractionSource
+    showReason?: boolean
+  }>(),
+  {
+    source: 'recommendations',
+    showReason: true,
+  },
+)
 
-const image = getItemImage(props.item)
-const meta = getItemSecondaryMeta(props.item)
-const rating = getItemRating(props.item)
+const cardItem = computed(() => {
+  return props.recommendation?.item ?? props.item ?? null
+})
+
+const image = computed(() => {
+  if (!cardItem.value) {
+    return ''
+  }
+
+  return getItemImage(cardItem.value)
+})
+
+const meta = computed(() => {
+  if (!cardItem.value) {
+    return ''
+  }
+
+  return getItemSecondaryMeta(cardItem.value)
+})
+
+const rating = computed(() => {
+  if (!cardItem.value) {
+    return null
+  }
+
+  return getItemRating(cardItem.value)
+})
+
+const reason = computed(() => {
+  return props.recommendation?.reason?.trim() ?? ''
+})
+
+const scoreLabel = computed(() => {
+  const score = props.recommendation?.score
+
+  if (typeof score !== 'number' || !Number.isFinite(score)) {
+    return ''
+  }
+
+  if (score >= 0 && score <= 1) {
+    return `${Math.round(score * 100)}% match`
+  }
+
+  return `Score ${score.toFixed(2)}`
+})
 </script>
 
 <template>
-  <RouterLink :to="`/items/${item.id}`" class="recommendation-card">
+  <RouterLink
+    v-if="cardItem"
+    :to="{
+      path: `/items/${cardItem.id}`,
+      query: {
+        source,
+      },
+    }"
+    class="recommendation-card"
+  >
     <div class="recommendation-card__poster">
-      <img :src="image" :alt="item.title" />
+      <img :src="image" :alt="cardItem.title" />
 
       <span v-if="badge" class="recommendation-card__badge">
         {{ badge }}
+      </span>
+
+      <span v-else-if="scoreLabel" class="recommendation-card__badge">
+        {{ scoreLabel }}
       </span>
 
       <span v-if="rating !== null" class="recommendation-card__rating">
@@ -28,8 +99,15 @@ const rating = getItemRating(props.item)
     </div>
 
     <div class="recommendation-card__body">
-      <h3 class="recommendation-card__title">{{ item.title }}</h3>
+      <h3 class="recommendation-card__title">{{ cardItem.title }}</h3>
       <p class="recommendation-card__meta">{{ meta }}</p>
+
+      <p
+        v-if="showReason && reason"
+        class="recommendation-card__reason"
+      >
+        {{ reason }}
+      </p>
     </div>
   </RouterLink>
 </template>
@@ -113,5 +191,16 @@ const rating = getItemRating(props.item)
   color: #94a3b8;
   font-size: 13px;
   line-height: 1.5;
+}
+
+.recommendation-card__reason {
+  margin: 10px 0 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.6;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 </style>

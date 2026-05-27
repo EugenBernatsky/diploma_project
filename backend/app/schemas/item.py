@@ -260,5 +260,21 @@ class MediaItemUpdate(BaseModel):
     pdf_available: bool | None = None
 
 
+class ItemStatsResponse(BaseModel):
+    item_id: str
+
+    user_rating_average: float | None = None
+    user_ratings_count: int = 0
+
+    favorites_count: int = 0
+
+    statuses_total_count: int = 0
+    status_counts: dict[str, int] = Field(default_factory=dict)
+
+    comments_count: int = 0
+
 class ItemActionResponse(BaseModel):
     message: str
+
+class ItemsCountResponse(BaseModel):
+    count: int

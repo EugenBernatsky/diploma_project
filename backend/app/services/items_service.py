@@ -1,6 +1,16 @@
 from app.repositories.items_repository import find_item_by_id, find_items
 from app.schemas.item import MediaItem, Category
+from fastapi import HTTPException
 
+from app.repositories.comments_repository import count_comments_by_item_id
+from app.repositories.favorites_repository import count_favorites_by_item_id
+from app.repositories.items_repository import find_item_by_id, find_items
+from app.repositories.ratings_repository import get_rating_stats_by_item_id
+from app.repositories.statuses_repository import count_statuses_by_item_id
+from app.schemas.item import MediaItem, Category, ItemStatsResponse
+
+from app.repositories.items_repository import count_items, find_item_by_id, find_items
+from app.schemas.item import MediaItem, Category, ItemStatsResponse, ItemsCountResponse
 
 def _map_doc_to_media_item(doc: dict) -> MediaItem:
     return MediaItem(
@@ -58,10 +68,17 @@ def _map_doc_to_media_item(doc: dict) -> MediaItem:
     )
 
 
-async def get_items(category: Category | None = None) -> list[MediaItem]:
-    docs = await find_items(category, limit=100)
+async def get_items(
+    category: Category | None = None,
+    limit: int = 100,
+    skip: int = 0,
+) -> list[MediaItem]:
+    docs = await find_items(category=category, limit=limit, skip=skip)
     return [_map_doc_to_media_item(doc) for doc in docs]
 
+async def get_items_count(category: Category | None = None) -> ItemsCountResponse:
+    count = await count_items(category=category)
+    return ItemsCountResponse(count=count)
 
 async def get_item_by_id(item_id: str) -> MediaItem | None:
     doc = await find_item_by_id(item_id)
@@ -70,3 +87,24 @@ async def get_item_by_id(item_id: str) -> MediaItem | None:
         return None
 
     return _map_doc_to_media_item(doc)
+
+async def get_item_stats(item_id: str) -> ItemStatsResponse:
+    item = await find_item_by_id(item_id)
+
+    if item is None:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    rating_stats = await get_rating_stats_by_item_id(item_id)
+    favorites_count = await count_favorites_by_item_id(item_id)
+    status_counts = await count_statuses_by_item_id(item_id)
+    comments_count = await count_comments_by_item_id(item_id)
+
+    return ItemStatsResponse(
+        item_id=item_id,
+        user_rating_average=rating_stats["average"],
+        user_ratings_count=rating_stats["count"],
+        favorites_count=favorites_count,
+        statuses_total_count=sum(status_counts.values()),
+        status_counts=status_counts,
+        comments_count=comments_count,
+    )

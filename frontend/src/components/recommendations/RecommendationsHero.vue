@@ -1,17 +1,24 @@
 <script setup lang="ts">
-defineProps<{
-  totalItems: number
-  lastUpdatedLabel: string
-}>()
+withDefaults(
+  defineProps<{
+    totalItems: number
+    sectionsCount: number
+    lastUpdatedLabel: string
+    isRefreshing?: boolean
+  }>(),
+  {
+    isRefreshing: false,
+  },
+)
 
 const emit = defineEmits<{
-  (e: 'refresh'): void
+  (event: 'refresh'): void
 }>()
 </script>
 
 <template>
   <section class="recommendations-hero">
-    <div class="recommendations-hero__badge">NEURAL DISCOVERY ENGINE</div>
+    <div class="recommendations-hero__badge">HYBRID RECOMMENDATION ENGINE</div>
 
     <div class="recommendations-hero__content">
       <div class="recommendations-hero__copy">
@@ -21,14 +28,14 @@ const emit = defineEmits<{
         </h1>
 
         <p class="recommendations-hero__text">
-          This page already uses real catalog items from your backend. Right now the
-          grouping is frontend-driven, but the UI is ready to swap to a real
-          recommendation endpoint later without a redesign.
+          Personal recommendations are loaded from the production backend API.
+          The page shows hybrid, popularity-based and collaborative-ready sections
+          with clear fallback statuses.
         </p>
 
         <div class="recommendations-hero__stats">
-          <span>{{ totalItems }} real catalog items loaded</span>
-          <span>3 category streams combined</span>
+          <span>{{ totalItems }} recommendations loaded</span>
+          <span>{{ sectionsCount }} recommendation sections</span>
           <span>{{ lastUpdatedLabel }}</span>
         </div>
       </div>
@@ -36,9 +43,10 @@ const emit = defineEmits<{
       <button
         type="button"
         class="recommendations-hero__button"
+        :disabled="isRefreshing"
         @click="emit('refresh')"
       >
-        Refresh My Recommendations
+        {{ isRefreshing ? 'Refreshing...' : 'Refresh My Recommendations' }}
       </button>
     </div>
   </section>
@@ -117,6 +125,11 @@ const emit = defineEmits<{
   color: #ffffff;
   font-weight: 700;
   cursor: pointer;
+}
+
+.recommendations-hero__button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
 }
 
 @media (max-width: 900px) {

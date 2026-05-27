@@ -44,3 +44,19 @@ async def update_user_fields(user_id: str, update_data: dict) -> dict | None:
     )
 
     return await db.users.find_one({"_id": ObjectId(user_id)})
+
+async def find_user_by_username_except_user(
+    username: str,
+    user_id: str,
+) -> dict | None:
+    if not ObjectId.is_valid(user_id):
+        return None
+
+    db = get_db()
+
+    return await db.users.find_one(
+        {
+            "username": username,
+            "_id": {"$ne": ObjectId(user_id)},
+        }
+    )

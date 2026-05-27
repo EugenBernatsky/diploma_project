@@ -3,15 +3,14 @@ from datetime import datetime
 from bson import ObjectId
 
 from app.db.mongo import get_db
-from app.schemas.interaction import InteractionType, InteractionSource
+from app.schemas.interaction import InteractionSource, InteractionType
 
 
 async def insert_interaction(
     user_id: str,
     item_id: str,
     interaction_type: InteractionType,
-    source: InteractionSource | None,
-    value: int,
+    source: InteractionSource,
     created_at: datetime,
 ) -> dict:
     db = get_db()
@@ -21,7 +20,6 @@ async def insert_interaction(
         "item_id": ObjectId(item_id),
         "interaction_type": interaction_type,
         "source": source,
-        "value": value,
         "created_at": created_at,
     }
 

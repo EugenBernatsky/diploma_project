@@ -2,12 +2,18 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import type { MediaItem } from '../../types/media'
-import { getItemImage, getItemRating, getItemSecondaryMeta } from '../../utils/catalog'
+import type { RecommendationItem } from '../../types/recommendations'
+import {
+  getItemImage,
+  getItemRating,
+  getItemSecondaryMeta,
+} from '../../utils/catalog'
 
 const props = defineProps<{
   currentItem: MediaItem
-  items: MediaItem[]
+  recommendations: RecommendationItem[]
 }>()
+
 
 const catalogLink = computed(() => {
   const query: Record<string, string> = {
@@ -23,12 +29,31 @@ const catalogLink = computed(() => {
     query,
   }
 })
+
+function getScoreLabel(score: number): string {
+  if (!Number.isFinite(score)) {
+    return ''
+  }
+
+  if (score >= 0 && score <= 1) {
+    return `${Math.round(score * 100)}% similar`
+  }
+
+  return `Score ${score.toFixed(2)}`
+}
+
+
 </script>
 
 <template>
-  <section class="item-similar">
+  <section v-if="recommendations.length" class="item-similar">
     <div class="item-similar__header">
-      <h2 class="item-similar__title">Similar Adventures</h2>
+      <div>
+        <h2 class="item-similar__title">Similar Items</h2>
+        <p class="item-similar__subtitle">
+          Content-based recommendations from the backend similarity model.
+        </p>
+      </div>
 
       <RouterLink :to="catalogLink" class="item-similar__link">
         View Entire Catalog
@@ -37,21 +62,49 @@ const catalogLink = computed(() => {
 
     <div class="item-similar__grid">
       <RouterLink
-        v-for="item in items"
-        :key="item.id"
-        :to="`/items/${item.id}`"
+        v-for="recommendation in recommendations"
+        :key="recommendation.item.id"
+        :to="{
+          path: `/items/${recommendation.item.id}`,
+          query: {
+            source: 'similar_items',
+          },
+        }"
         class="item-similar__card"
       >
         <div class="item-similar__poster">
-          <img :src="getItemImage(item)" :alt="item.title" />
-          <span v-if="getItemRating(item) !== null" class="item-similar__rating">
-            ★ {{ getItemRating(item)?.toFixed(1) }}
+          <img
+            :src="getItemImage(recommendation.item)"
+            :alt="recommendation.item.title"
+          />
+
+          <span
+            v-if="getItemRating(recommendation.item) !== null"
+            class="item-similar__rating"
+          >
+            ★ {{ getItemRating(recommendation.item)?.toFixed(1) }}
+          </span>
+
+          <span
+            v-if="getScoreLabel(recommendation.score)"
+            class="item-similar__score"
+          >
+            {{ getScoreLabel(recommendation.score) }}
           </span>
         </div>
 
         <div class="item-similar__body">
-          <h3 class="item-similar__card-title">{{ item.title }}</h3>
-          <p class="item-similar__meta">{{ getItemSecondaryMeta(item) }}</p>
+          <h3 class="item-similar__card-title">
+            {{ recommendation.item.title }}
+          </h3>
+
+          <p class="item-similar__meta">
+            {{ getItemSecondaryMeta(recommendation.item) }}
+          </p>
+
+          <p v-if="recommendation.reason" class="item-similar__reason">
+            {{ recommendation.reason }}
+          </p>
         </div>
       </RouterLink>
     </div>
@@ -66,41 +119,62 @@ const catalogLink = computed(() => {
 .item-similar__header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-end;
   gap: 16px;
   margin-bottom: 20px;
 }
 
 .item-similar__title {
-  margin: 0;
+  margin: 0 0 8px;
   color: #f8fafc;
   font-size: 36px;
   line-height: 1;
   letter-spacing: -0.03em;
 }
 
+.item-similar__subtitle {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 14px;
+  line-height: 1.6;
+}
+
 .item-similar__link {
   color: #60a5fa;
   text-decoration: none;
   font-weight: 700;
+  flex: 0 0 auto;
 }
 
 .item-similar__grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 16px;
 }
 
 .item-similar__card {
   display: block;
   text-decoration: none;
+  border-radius: 18px;
+  overflow: hidden;
+  background: rgba(15, 23, 42, 0.62);
+  border: 1px solid rgba(148, 163, 184, 0.08);
+  transition:
+    transform 0.2s ease,
+    border-color 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.item-similar__card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(96, 165, 250, 0.22);
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.24);
 }
 
 .item-similar__poster {
   position: relative;
   aspect-ratio: 0.72 / 1;
   overflow: hidden;
-  border-radius: 18px;
   background: #111827;
 }
 
@@ -111,20 +185,30 @@ const catalogLink = computed(() => {
   display: block;
 }
 
-.item-similar__rating {
+.item-similar__rating,
+.item-similar__score {
   position: absolute;
-  top: 10px;
-  right: 10px;
+  z-index: 1;
   padding: 5px 8px;
   border-radius: 999px;
-  background: rgba(2, 6, 23, 0.8);
+  background: rgba(2, 6, 23, 0.82);
   color: #dbeafe;
   font-size: 11px;
   font-weight: 700;
 }
 
+.item-similar__rating {
+  top: 10px;
+  right: 10px;
+}
+
+.item-similar__score {
+  left: 10px;
+  bottom: 10px;
+}
+
 .item-similar__body {
-  padding: 12px 2px 0;
+  padding: 12px 12px 14px;
 }
 
 .item-similar__card-title {
@@ -138,6 +222,18 @@ const catalogLink = computed(() => {
   margin: 0;
   color: #94a3b8;
   font-size: 13px;
+  line-height: 1.5;
+}
+
+.item-similar__reason {
+  margin: 10px 0 0;
+  color: #cbd5e1;
+  font-size: 13px;
+  line-height: 1.6;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 @media (max-width: 1200px) {

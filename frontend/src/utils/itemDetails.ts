@@ -142,7 +142,7 @@ export function getHeroChips(item: MediaItem): ItemHeroChip[] {
   const rating = getItemDisplayRating(item)
   if (rating) {
     chips.push({
-      label: 'Rating',
+      label: item.category === 'book' ? 'Book Rating' : 'TMDb Rating',
       value: rating,
     })
   }
