@@ -2,13 +2,17 @@
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useAuth } from '../../services/auth'
+import { getItems } from '../../services/api'
 import { getAvatarImageUrl } from '../../utils/avatars'
+import { getCategoryLabel, normalizeImageUrl } from '../../utils/catalog'
+import { buildItemRoute } from '../../utils/itemRoutes'
 import {
   getNotifications,
   getUnreadNotificationsCount,
   markAllNotificationsAsRead,
   markNotificationAsRead,
 } from '../../services/notifications'
+import type { MediaItem } from '../../types/media'
 import type { UserNotification } from '../../types/notification'
 
 const route = useRoute()
@@ -28,11 +32,26 @@ const unreadNotificationsCount = ref(0)
 const isNotificationsOpen = ref(false)
 const isNotificationsLoading = ref(false)
 const notificationsError = ref('')
+const headerSearchQuery = ref('')
+const headerSearchFormRef = ref<HTMLFormElement | null>(null)
+const searchSuggestions = ref<MediaItem[]>([])
+const isSearchSuggestionsOpen = ref(false)
+const isSearchSuggestionsLoading = ref(false)
+const searchSuggestionsError = ref('')
 
 let notificationsIntervalId: number | undefined
+let searchDebounceId: number | undefined
+let searchRequestId = 0
 
 const visibleNotifications = computed(() => {
   return notifications.value.slice(0, 8)
+})
+
+const shouldShowSearchSuggestions = computed(() => {
+  return (
+    isSearchSuggestionsOpen.value &&
+    headerSearchQuery.value.trim().length >= 2
+  )
 })
 
 function formatNotificationTime(value: string): string {
@@ -192,6 +211,119 @@ function isActive(path: string) {
   return route.path === path
 }
 
+function clearSearchSuggestions() {
+  if (searchDebounceId) {
+    window.clearTimeout(searchDebounceId)
+    searchDebounceId = undefined
+  }
+
+  searchRequestId += 1
+  searchSuggestions.value = []
+  searchSuggestionsError.value = ''
+  isSearchSuggestionsLoading.value = false
+  isSearchSuggestionsOpen.value = false
+}
+
+async function loadSearchSuggestions(query: string, requestId: number) {
+  try {
+    const response = await getItems({
+      search: query,
+      limit: 5,
+      skip: 0,
+      sort: 'relevance',
+    })
+
+    if (requestId !== searchRequestId) {
+      return
+    }
+
+    searchSuggestions.value = response.results
+    searchSuggestionsError.value = ''
+  } catch (error) {
+    if (requestId !== searchRequestId) {
+      return
+    }
+
+    searchSuggestions.value = []
+    searchSuggestionsError.value =
+      error instanceof Error ? error.message : 'Failed to load suggestions.'
+  } finally {
+    if (requestId === searchRequestId) {
+      isSearchSuggestionsLoading.value = false
+    }
+  }
+}
+
+function scheduleSearchSuggestions(value: string) {
+  const query = value.trim()
+
+  if (searchDebounceId) {
+    window.clearTimeout(searchDebounceId)
+    searchDebounceId = undefined
+  }
+
+  searchRequestId += 1
+  const requestId = searchRequestId
+
+  if (query.length < 2) {
+    searchSuggestions.value = []
+    searchSuggestionsError.value = ''
+    isSearchSuggestionsLoading.value = false
+    isSearchSuggestionsOpen.value = false
+    return
+  }
+
+  searchSuggestions.value = []
+  searchSuggestionsError.value = ''
+  isSearchSuggestionsLoading.value = true
+  isSearchSuggestionsOpen.value = true
+
+  searchDebounceId = window.setTimeout(() => {
+    searchDebounceId = undefined
+    loadSearchSuggestions(query, requestId)
+  }, 280)
+}
+
+function getSuggestionPosterUrl(item: MediaItem): string | null {
+  return normalizeImageUrl(item.poster_url)
+}
+
+function handleSearchSuggestionClick(item: MediaItem) {
+  clearSearchSuggestions()
+  router.push(buildItemRoute(item.id, 'search'))
+}
+
+function handleDocumentClick(event: MouseEvent) {
+  const target = event.target
+
+  if (
+    target instanceof Node &&
+    headerSearchFormRef.value?.contains(target)
+  ) {
+    return
+  }
+
+  clearSearchSuggestions()
+}
+
+function submitHeaderSearch() {
+  const query = headerSearchQuery.value.trim()
+
+  if (!query) {
+    clearSearchSuggestions()
+    return
+  }
+
+  clearSearchSuggestions()
+
+  router.push({
+    path: '/catalog',
+    query: {
+      search: query,
+    },
+  })
+}
+
 function handleLogout() {
   isNotificationsOpen.value = false
   notifications.value = []
@@ -214,6 +346,17 @@ watch(
   },
 )
 
+watch(headerSearchQuery, (value) => {
+  scheduleSearchSuggestions(value)
+})
+
+watch(
+  () => route.fullPath,
+  () => {
+    clearSearchSuggestions()
+  },
+)
+
 onMounted(() => {
   if (isLoggedIn.value) {
     loadNotifications()
@@ -230,12 +373,20 @@ onMounted(() => {
         })
     }
   }, 45000)
+
+  document.addEventListener('click', handleDocumentClick)
 })
 
 onUnmounted(() => {
   if (notificationsIntervalId) {
     window.clearInterval(notificationsIntervalId)
   }
+
+  if (searchDebounceId) {
+    window.clearTimeout(searchDebounceId)
+  }
+
+  document.removeEventListener('click', handleDocumentClick)
 })
 </script>
 
@@ -284,7 +435,11 @@ onUnmounted(() => {
       </nav>
 
       <div class="header__actions">
-        <label class="header__search">
+        <form
+          ref="headerSearchFormRef"
+          class="header__search"
+          @submit.prevent="submitHeaderSearch"
+        >
           <svg class="header__search-icon" viewBox="0 0 24 24" aria-hidden="true">
             <path
               d="M10.5 18a7.5 7.5 0 1 1 5.303-2.197L21 21"
@@ -296,8 +451,69 @@ onUnmounted(() => {
             />
           </svg>
 
-          <input type="text" placeholder="Search title, author..." />
-        </label>
+          <input
+            v-model="headerSearchQuery"
+            type="search"
+            placeholder="Search title, author..."
+          />
+
+          <div
+            v-if="shouldShowSearchSuggestions"
+            class="header__search-dropdown"
+          >
+            <div
+              v-if="isSearchSuggestionsLoading"
+              class="header__search-state"
+            >
+              Searching...
+            </div>
+
+            <div
+              v-else-if="searchSuggestionsError"
+              class="header__search-state header__search-state--error"
+            >
+              {{ searchSuggestionsError }}
+            </div>
+
+            <div
+              v-else-if="searchSuggestions.length === 0"
+              class="header__search-state"
+            >
+              No matches found.
+            </div>
+
+            <div v-else class="header__search-suggestions">
+              <button
+                v-for="item in searchSuggestions"
+                :key="item.id"
+                type="button"
+                class="header__search-suggestion"
+                @click="handleSearchSuggestionClick(item)"
+              >
+                <span class="header__search-suggestion-poster">
+                  <img
+                    v-if="getSuggestionPosterUrl(item)"
+                    :src="getSuggestionPosterUrl(item) || ''"
+                    :alt="item.title"
+                  />
+
+                  <span v-else>
+                    {{ item.title.charAt(0).toUpperCase() }}
+                  </span>
+                </span>
+
+                <span class="header__search-suggestion-body">
+                  <strong>{{ item.title }}</strong>
+                  <small>
+                    <span v-if="item.year">{{ item.year }}</span>
+                    <span v-if="item.year"> &bull; </span>
+                    <span>{{ getCategoryLabel(item.category) }}</span>
+                  </small>
+                </span>
+              </button>
+            </div>
+          </div>
+        </form>
 
       <div class="header__notifications">
         <button
@@ -556,6 +772,95 @@ onUnmounted(() => {
   width: 18px;
   height: 18px;
   color: #64748b;
+}
+
+.header__search-dropdown {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 0;
+  width: min(380px, calc(100vw - 32px));
+  border-radius: 18px;
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  background: rgba(8, 14, 24, 0.98);
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.36);
+  overflow: hidden;
+  z-index: 90;
+}
+
+.header__search-state {
+  padding: 16px;
+  color: #94a3b8;
+  font-size: 14px;
+}
+
+.header__search-state--error {
+  color: #fca5a5;
+}
+
+.header__search-suggestions {
+  display: grid;
+  max-height: 390px;
+  overflow-y: auto;
+}
+
+.header__search-suggestion {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.06);
+  background: transparent;
+  padding: 10px 12px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  text-align: left;
+  cursor: pointer;
+}
+
+.header__search-suggestion:hover {
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.header__search-suggestion-poster {
+  width: 42px;
+  aspect-ratio: 0.72 / 1;
+  overflow: hidden;
+  border-radius: 9px;
+  background: rgba(37, 99, 235, 0.16);
+  color: #bfdbfe;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.header__search-suggestion-poster img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.header__search-suggestion-body {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.header__search-suggestion-body strong {
+  color: #f8fafc;
+  font-size: 13px;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.header__search-suggestion-body small {
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 .header__icon-button {

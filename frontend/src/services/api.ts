@@ -1,6 +1,8 @@
 import { apiRequest } from './http'
 import type {
   Category,
+  GetItemsParams,
+  ItemsListResponse,
   MediaItem,
   MediaItemId,
   MediaItemStats,
@@ -16,12 +18,6 @@ export async function checkHealth(): Promise<HealthResponse> {
   })
 }
 
-export type GetItemsParams = {
-  category?: Category
-  limit?: number
-  skip?: number
-}
-
 export type ItemsCountResponse = {
   count: number
 }
@@ -29,33 +25,52 @@ export type ItemsCountResponse = {
 function buildItemsQuery(params?: GetItemsParams): string {
   const search = new URLSearchParams()
 
-  if (params?.category) {
-    search.set('category', params.category)
+  if (!params) {
+    return ''
   }
 
-  if (typeof params?.limit === 'number') {
-    search.set('limit', String(params.limit))
-  }
+  Object.entries(params).forEach(([key, value]) => {
+    if (value === undefined || value === null || value === '') {
+      return
+    }
 
-  if (typeof params?.skip === 'number') {
-    search.set('skip', String(params.skip))
-  }
+    if (key === 'genres') {
+      const genres = Array.isArray(value) ? value : []
+
+      genres.forEach((genre) => {
+        const normalized = genre.trim()
+
+        if (normalized) {
+          search.append('genres', normalized)
+        }
+      })
+
+      return
+    }
+
+    if (typeof value === 'string') {
+      const normalized = value.trim()
+
+      if (normalized) {
+        search.set(key, normalized)
+      }
+
+      return
+    }
+
+    search.set(key, String(value))
+  })
 
   return search.toString()
 }
 
 export async function getItems(
-  categoryOrParams?: Category | GetItemsParams,
-): Promise<MediaItem[]> {
-  const params: GetItemsParams =
-    typeof categoryOrParams === 'string'
-      ? { category: categoryOrParams }
-      : categoryOrParams ?? {}
-
+  params: GetItemsParams = {},
+): Promise<ItemsListResponse> {
   const query = buildItemsQuery(params)
   const suffix = query ? `?${query}` : ''
 
-  return apiRequest<MediaItem[]>(`/items${suffix}`, {
+  return apiRequest<ItemsListResponse>(`/items${suffix}`, {
     auth: false,
   })
 }
@@ -90,14 +105,6 @@ export async function getItemStats(
   )
 }
 
-function sortItemsForHome(items: MediaItem[]): MediaItem[] {
-  return [...items].sort((a, b) => {
-    const yearA = a.year ?? 0
-    const yearB = b.year ?? 0
-    return yearB - yearA
-  })
-}
-
 function interleaveGroups(groups: MediaItem[][], limit: number): MediaItem[] {
   const result: MediaItem[] = []
   const buckets = groups.map((group) => [...group])
@@ -130,15 +137,21 @@ export async function getHomeShowcaseItems(limit = 5): Promise<MediaItem[]> {
   const categories: Category[] = ['movie', 'series', 'book']
 
   const results = await Promise.allSettled(
-    categories.map((category) => getItems(category)),
+    categories.map((category) =>
+      getItems({
+        category,
+        sort: 'newest',
+        limit,
+      }),
+    ),
   )
 
   const successfulGroups = results
     .filter(
-      (result): result is PromiseFulfilledResult<MediaItem[]> =>
+      (result): result is PromiseFulfilledResult<ItemsListResponse> =>
         result.status === 'fulfilled',
     )
-    .map((result) => sortItemsForHome(result.value))
+    .map((result) => result.value.results)
 
   const mixedItems = interleaveGroups(successfulGroups, limit)
 
@@ -159,25 +172,12 @@ export async function getHomeShowcaseItems(limit = 5): Promise<MediaItem[]> {
   return uniqueItems.slice(0, limit)
 }
 
-function sortMoviesForPopularity(items: MediaItem[]): MediaItem[] {
-  return [...items].sort((a, b) => {
-    const ratingA =
-      typeof a.tmdb_vote_average === 'number' ? a.tmdb_vote_average : 0
-    const ratingB =
-      typeof b.tmdb_vote_average === 'number' ? b.tmdb_vote_average : 0
-
-    if (ratingB !== ratingA) {
-      return ratingB - ratingA
-    }
-
-    const yearA = a.year ?? 0
-    const yearB = b.year ?? 0
-
-    return yearB - yearA
-  })
-}
-
 export async function getPopularMovieItems(limit = 4): Promise<MediaItem[]> {
-  const movies = await getItems('movie')
-  return sortMoviesForPopularity(movies).slice(0, limit)
+  const response = await getItems({
+    category: 'movie',
+    sort: 'rating_desc',
+    limit,
+  })
+
+  return response.results
 }

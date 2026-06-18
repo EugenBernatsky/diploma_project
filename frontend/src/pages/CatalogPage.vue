@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import CatalogToolbar from '../components/catalog/CatalogToolbar.vue'
 import type { CatalogViewMode } from '../components/catalog/CatalogToolbar.vue'
 import CatalogFiltersSidebar from '../components/catalog/CatalogFiltersSidebar.vue'
 import CatalogPagination from '../components/catalog/CatalogPagination.vue'
 import MediaItemCard from '../components/catalog/MediaItemCard.vue'
-import { getItems, getItemsCount } from '../services/api'
-import type { Category, MediaItem } from '../types/media'
+import { getItems } from '../services/api'
+import type { Category, GetItemsParams, MediaItem } from '../types/media'
 import type {
   CatalogCategory,
   CatalogSort,
@@ -15,10 +15,9 @@ import type {
   YearBucket,
 } from '../utils/catalog'
 import {
-  getItemRating,
-  matchesDurationBucket,
-  matchesYearBucket,
-  sortCatalogItems,
+  getDurationBucketRange,
+  getYearBucketRange,
+  mapCatalogSortToItemSort,
 } from '../utils/catalog'
 
 const route = useRoute()
@@ -43,7 +42,6 @@ const currentPage = ref(1)
 const itemsPerPage = 12
 
 const applyingRouteState = ref(false)
-const pendingGenresFromRoute = ref<string[] | null>(null)
 
 function parseCategoryQuery(value: unknown): CatalogCategory {
   if (value === 'movie' || value === 'series' || value === 'book' || value === 'all') {
@@ -54,14 +52,30 @@ function parseCategoryQuery(value: unknown): CatalogCategory {
 }
 
 function parseGenresQuery(value: unknown): string[] {
-  if (typeof value !== 'string' || !value.trim()) {
+  const rawValue = Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === 'string').join(',')
+    : value
+
+  if (typeof rawValue !== 'string' || !rawValue.trim()) {
     return []
   }
 
-  return value
+  return rawValue
     .split(',')
     .map((genre) => genre.trim())
     .filter(Boolean)
+}
+
+function parseStringQuery(value: unknown): string {
+  if (typeof value === 'string') {
+    return value.trim()
+  }
+
+  if (Array.isArray(value) && typeof value[0] === 'string') {
+    return value[0].trim()
+  }
+
+  return ''
 }
 
 function getApiCategory(): Category | undefined {
@@ -72,24 +86,65 @@ function getApiCategory(): Category | undefined {
   return currentCategory.value
 }
 
-function areStringArraysEqual(a: string[], b: string[]): boolean {
-  if (a.length !== b.length) {
-    return false
+function getCatalogRequestParams(): GetItemsParams {
+  const category = getApiCategory()
+  const skip = (currentPage.value - 1) * itemsPerPage
+  const query = searchQuery.value.trim()
+  const yearRange = getYearBucketRange(selectedYearBucket.value)
+  const params: GetItemsParams = {
+    category,
+    limit: itemsPerPage,
+    skip,
+    sort: mapCatalogSortToItemSort(sortBy.value, query),
+    ...yearRange,
   }
 
-  return a.every((value, index) => value === b[index])
+  if (query) {
+    params.search = query
+  }
+
+  if (selectedGenres.value.length > 0) {
+    params.genres = selectedGenres.value
+  }
+
+  if (minRating.value > 0) {
+    params.min_rating = minRating.value
+  }
+
+  if (category === 'movie' || category === 'series') {
+    Object.assign(params, getDurationBucketRange(selectedDurationBucket.value))
+  }
+
+  return params
 }
 
 function applyRouteFilters() {
   applyingRouteState.value = true
 
   currentCategory.value = parseCategoryQuery(route.query.category)
-  pendingGenresFromRoute.value = parseGenresQuery(route.query.genres)
+  selectedGenres.value = parseGenresQuery(route.query.genres)
+  searchQuery.value = parseStringQuery(route.query.search)
 
-  applyingRouteState.value = false
+  nextTick(() => {
+    applyingRouteState.value = false
+  })
 }
 
-function syncRouteFilters() {
+function getRouteQueryValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value
+      .filter((item): item is string => typeof item === 'string')
+      .join(',')
+  }
+
+  if (typeof value === 'string') {
+    return value
+  }
+
+  return ''
+}
+
+function syncRouteFilters(): boolean {
   const nextQuery = { ...route.query }
 
   if (currentCategory.value !== 'all') {
@@ -104,7 +159,24 @@ function syncRouteFilters() {
     delete nextQuery.genres
   }
 
-  router.replace({ query: nextQuery })
+  const normalizedSearch = searchQuery.value.trim()
+
+  if (normalizedSearch) {
+    nextQuery.search = normalizedSearch
+  } else {
+    delete nextQuery.search
+  }
+
+  const changed =
+    getRouteQueryValue(route.query.category) !== getRouteQueryValue(nextQuery.category) ||
+    getRouteQueryValue(route.query.genres) !== getRouteQueryValue(nextQuery.genres) ||
+    getRouteQueryValue(route.query.search) !== getRouteQueryValue(nextQuery.search)
+
+  if (changed) {
+    router.replace({ query: nextQuery })
+  }
+
+  return changed
 }
 
 async function loadCatalog() {
@@ -112,20 +184,10 @@ async function loadCatalog() {
   errorText.value = ''
 
   try {
-    const category = getApiCategory()
-    const skip = (currentPage.value - 1) * itemsPerPage
+    const response = await getItems(getCatalogRequestParams())
 
-    const [items, countResponse] = await Promise.all([
-      getItems({
-        category,
-        limit: itemsPerPage,
-        skip,
-      }),
-      getItemsCount(category),
-    ])
-
-    pageItems.value = items
-    totalItemsCount.value = countResponse.count
+    pageItems.value = response.results
+    totalItemsCount.value = response.total
   } catch (error) {
     errorText.value =
       error instanceof Error ? error.message : 'Unknown catalog error'
@@ -139,6 +201,12 @@ async function loadCatalog() {
 const availableGenres = computed(() => {
   const set = new Set<string>()
 
+  for (const genre of selectedGenres.value) {
+    if (genre.trim()) {
+      set.add(genre.trim())
+    }
+  }
+
   for (const item of pageItems.value) {
     for (const genre of item.genres || []) {
       if (genre?.trim()) {
@@ -150,46 +218,11 @@ const availableGenres = computed(() => {
   return Array.from(set).sort((a, b) => a.localeCompare(b))
 })
 
-const filteredItems = computed(() => {
-  const query = searchQuery.value.trim().toLowerCase()
-
-  return pageItems.value.filter((item) => {
-    const description = item.description ?? ''
-
-    const matchesSearch =
-      !query ||
-      item.title.toLowerCase().includes(query) ||
-      description.toLowerCase().includes(query) ||
-      item.genres.some((genre) => genre.toLowerCase().includes(query))
-
-    const matchesGenres =
-      selectedGenres.value.length === 0 ||
-      selectedGenres.value.every((genre) => item.genres.includes(genre))
-
-    const rating = getItemRating(item)
-    const matchesRating = rating === null || rating >= minRating.value
-    const matchesYear = matchesYearBucket(item, selectedYearBucket.value)
-    const matchesDuration = matchesDurationBucket(item, selectedDurationBucket.value)
-
-    return (
-      matchesSearch &&
-      matchesGenres &&
-      matchesRating &&
-      matchesYear &&
-      matchesDuration
-    )
-  })
-})
-
-const sortedItems = computed(() => {
-  return sortCatalogItems(filteredItems.value, sortBy.value)
-})
-
 const totalPages = computed(() => {
   return Math.max(1, Math.ceil(totalItemsCount.value / itemsPerPage))
 })
 
-const shownItemsCount = computed(() => sortedItems.value.length)
+const shownItemsCount = computed(() => pageItems.value.length)
 
 function toggleGenre(genre: string) {
   if (selectedGenres.value.includes(genre)) {
@@ -218,39 +251,7 @@ watch(
   () => {
     applyRouteFilters()
     currentPage.value = 1
-  },
-  { deep: true },
-)
-
-watch(availableGenres, (genres) => {
-  if (pendingGenresFromRoute.value) {
-    const nextGenres = pendingGenresFromRoute.value.filter((genre) =>
-      genres.includes(genre),
-    )
-
-    if (!areStringArraysEqual(selectedGenres.value, nextGenres)) {
-      selectedGenres.value = nextGenres
-    }
-
-    pendingGenresFromRoute.value = null
-    return
-  }
-
-  const nextGenres = selectedGenres.value.filter((genre) => genres.includes(genre))
-
-  if (!areStringArraysEqual(selectedGenres.value, nextGenres)) {
-    selectedGenres.value = nextGenres
-  }
-})
-
-watch(
-  [currentCategory, selectedGenres],
-  () => {
-    if (applyingRouteState.value || pendingGenresFromRoute.value) {
-      return
-    }
-
-    syncRouteFilters()
+    loadCatalog()
   },
   { deep: true },
 )
@@ -258,6 +259,7 @@ watch(
 watch(
   [
     searchQuery,
+    currentCategory,
     sortBy,
     selectedGenres,
     selectedYearBucket,
@@ -265,23 +267,34 @@ watch(
     selectedDurationBucket,
   ],
   () => {
+    if (applyingRouteState.value) {
+      return
+    }
+
     currentPage.value = 1
+
+    if (!syncRouteFilters()) {
+      loadCatalog()
+    }
   },
   { deep: true },
-)
-
-watch(
-  [currentCategory, currentPage],
-  () => {
-    loadCatalog()
-  },
 )
 
 watch(totalPages, (pages) => {
   if (currentPage.value > pages) {
     currentPage.value = pages
+    loadCatalog()
   }
 })
+
+function handlePageChange(page: number) {
+  if (page === currentPage.value) {
+    return
+  }
+
+  currentPage.value = page
+  loadCatalog()
+}
 
 onMounted(async () => {
   applyRouteFilters()
@@ -337,12 +350,12 @@ onMounted(async () => {
           </div>
 
           <div
-            v-else-if="sortedItems.length > 0"
+            v-else-if="pageItems.length > 0"
             class="catalog-grid"
             :class="{ 'catalog-grid--list': viewMode === 'list' }"
             >
             <MediaItemCard
-              v-for="item in sortedItems"
+              v-for="item in pageItems"
               :key="item.id"
               :item="item"
             />
@@ -355,7 +368,7 @@ onMounted(async () => {
           <CatalogPagination
             :current-page="currentPage"
             :total-pages="totalPages"
-            @update:page="currentPage = $event"
+            @update:page="handlePageChange"
           />
         </div>
 

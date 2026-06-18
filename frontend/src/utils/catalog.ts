@@ -1,4 +1,4 @@
-import type { Category, MediaItem } from '../types/media'
+import type { Category, ItemSort, MediaItem } from '../types/media'
 
 export type CatalogCategory = 'all' | Category
 export type CatalogSort = 'popular' | 'newest' | 'oldest' | 'title'
@@ -136,6 +136,67 @@ export function sortCatalogItems(items: MediaItem[], sortBy: CatalogSort): Media
 
     return (b.year ?? 0) - (a.year ?? 0)
   })
+}
+
+export function mapCatalogSortToItemSort(
+  sortBy: CatalogSort,
+  searchQuery = '',
+): ItemSort {
+  if (sortBy === 'popular' && searchQuery.trim()) {
+    return 'relevance'
+  }
+
+  if (sortBy === 'popular') {
+    return 'rating_desc'
+  }
+
+  if (sortBy === 'newest') {
+    return 'year_desc'
+  }
+
+  if (sortBy === 'oldest') {
+    return 'year_asc'
+  }
+
+  return 'title_asc'
+}
+
+export function getYearBucketRange(
+  yearBucket: YearBucket,
+): { year_from?: number; year_to?: number } {
+  if (yearBucket === 'any') {
+    return {}
+  }
+
+  if (yearBucket === 'classic') {
+    return { year_to: 2009 }
+  }
+
+  if (yearBucket === '2010s') {
+    return {
+      year_from: 2010,
+      year_to: 2019,
+    }
+  }
+
+  const year = Number(yearBucket)
+
+  return {
+    year_from: year,
+    year_to: year,
+  }
+}
+
+export function getDurationBucketRange(
+  durationBucket: DurationBucket,
+): { runtime_from?: number; runtime_to?: number } {
+  if (durationBucket === 'any') {
+    return {}
+  }
+
+  return {
+    runtime_from: Number(durationBucket),
+  }
 }
 
 export function matchesYearBucket(item: MediaItem, yearBucket: YearBucket): boolean {

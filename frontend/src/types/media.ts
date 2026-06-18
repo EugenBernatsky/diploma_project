@@ -1,6 +1,17 @@
 export type Category = 'movie' | 'series' | 'book'
 export type MediaItemId = string
 
+export type ItemSort =
+  | 'relevance'
+  | 'newest'
+  | 'updated'
+  | 'title_asc'
+  | 'title_desc'
+  | 'year_asc'
+  | 'year_desc'
+  | 'rating_asc'
+  | 'rating_desc'
+
 export type MediaTrailer = {
   name: string
   site: string
@@ -95,4 +106,25 @@ export type MediaItem = {
   trailers?: MediaTrailer[]
   watch_links?: MediaProviderLink[]
   purchase_links?: MediaProviderLink[]
+}
+
+export type ItemsListResponse = {
+  results: MediaItem[]
+  total: number
+  limit: number
+  skip: number
+}
+
+export type GetItemsParams = {
+  search?: string
+  category?: Category
+  genres?: string[]
+  year_from?: number
+  year_to?: number
+  min_rating?: number
+  runtime_from?: number
+  runtime_to?: number
+  sort?: ItemSort
+  limit?: number
+  skip?: number
 }
