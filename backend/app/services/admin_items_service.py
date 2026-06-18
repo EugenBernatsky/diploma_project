@@ -103,14 +103,22 @@ def _normalize_purchase_links(purchase_links: list[PurchaseLink]) -> list[dict]:
     normalized: list[dict] = []
 
     for link in purchase_links:
-        store_name = link.store_name.strip()
         url = link.url.strip()
+        store_name = _normalize_optional_text(link.store_name)
+        provider_name = (
+            _normalize_optional_text(link.provider_name)
+            or store_name
+            or "External"
+        )
+        provider_type = _normalize_optional_text(link.provider_type) or "external"
 
-        if not store_name or not url:
+        if not url:
             continue
 
         normalized.append(
             {
+                "provider_name": provider_name,
+                "provider_type": provider_type,
                 "store_name": store_name,
                 "region": _normalize_optional_text(link.region),
                 "url": url,

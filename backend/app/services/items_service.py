@@ -1,16 +1,18 @@
-from app.repositories.items_repository import find_item_by_id, find_items
-from app.schemas.item import MediaItem, Category
 from fastapi import HTTPException
 
 from app.repositories.comments_repository import count_comments_by_item_id
 from app.repositories.favorites_repository import count_favorites_by_item_id
-from app.repositories.items_repository import find_item_by_id, find_items
+from app.repositories.items_repository import count_items, find_item_by_id, find_items
 from app.repositories.ratings_repository import get_rating_stats_by_item_id
 from app.repositories.statuses_repository import count_statuses_by_item_id
-from app.schemas.item import MediaItem, Category, ItemStatsResponse
-
-from app.repositories.items_repository import count_items, find_item_by_id, find_items
-from app.schemas.item import MediaItem, Category, ItemStatsResponse, ItemsCountResponse
+from app.schemas.item import (
+    Category,
+    ItemSort,
+    ItemStatsResponse,
+    ItemsCountResponse,
+    ItemsListResponse,
+    MediaItem,
+)
 
 def _map_doc_to_media_item(doc: dict) -> MediaItem:
     return MediaItem(
@@ -69,12 +71,48 @@ def _map_doc_to_media_item(doc: dict) -> MediaItem:
 
 
 async def get_items(
+    search: str | None = None,
     category: Category | None = None,
-    limit: int = 100,
+    genres: list[str] | None = None,
+    year_from: int | None = None,
+    year_to: int | None = None,
+    min_rating: float | None = None,
+    runtime_from: int | None = None,
+    runtime_to: int | None = None,
+    sort: ItemSort = "relevance",
+    limit: int = 20,
     skip: int = 0,
-) -> list[MediaItem]:
-    docs = await find_items(category=category, limit=limit, skip=skip)
-    return [_map_doc_to_media_item(doc) for doc in docs]
+) -> ItemsListResponse:
+    total = await count_items(
+        search=search,
+        category=category,
+        genres=genres,
+        year_from=year_from,
+        year_to=year_to,
+        min_rating=min_rating,
+        runtime_from=runtime_from,
+        runtime_to=runtime_to,
+    )
+    docs = await find_items(
+        search=search,
+        category=category,
+        genres=genres,
+        year_from=year_from,
+        year_to=year_to,
+        min_rating=min_rating,
+        runtime_from=runtime_from,
+        runtime_to=runtime_to,
+        sort=sort,
+        limit=limit,
+        skip=skip,
+    )
+
+    return ItemsListResponse(
+        results=[_map_doc_to_media_item(doc) for doc in docs],
+        total=total,
+        limit=limit,
+        skip=skip,
+    )
 
 async def get_items_count(category: Category | None = None) -> ItemsCountResponse:
     count = await count_items(category=category)

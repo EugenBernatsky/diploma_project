@@ -108,6 +108,8 @@ def map_purchase_links(sale_info: dict) -> list[dict]:
 
     return [
         {
+            "provider_name": "Google Books",
+            "provider_type": "external",
             "store_name": "Google Books",
             "region": sale_info.get("country"),
             "url": buy_link,

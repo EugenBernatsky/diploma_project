@@ -1,9 +1,28 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 Category = Literal["movie", "series", "book"]
+ItemSort = Literal[
+    "relevance",
+    "newest",
+    "updated",
+    "title_asc",
+    "title_desc",
+    "year_asc",
+    "year_desc",
+    "rating_asc",
+    "rating_desc",
+]
+
+
+def _clean_optional_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    normalized = value.strip()
+    return normalized if normalized else None
 
 
 class TrailerLink(BaseModel):
@@ -21,11 +40,27 @@ class WatchLink(BaseModel):
 
 
 class PurchaseLink(BaseModel):
-    store_name: str = Field(min_length=1, max_length=300)
+    provider_name: str | None = Field(default=None, max_length=300)
+    provider_type: str | None = Field(default="external", max_length=100)
+    store_name: str | None = Field(default=None, max_length=300)
     region: str | None = None
     url: str = Field(min_length=1, max_length=1000)
     price: float | None = None
     currency: str | None = None
+
+    @model_validator(mode="after")
+    def normalize_provider_fields(self):
+        store_name = _clean_optional_text(self.store_name)
+        self.provider_name = (
+            _clean_optional_text(self.provider_name)
+            or store_name
+            or "External"
+        )
+        self.provider_type = _clean_optional_text(self.provider_type) or "external"
+        self.store_name = store_name
+        self.region = _clean_optional_text(self.region)
+        self.currency = _clean_optional_text(self.currency)
+        return self
 
 
 class LocalizedItemContent(BaseModel):
@@ -118,6 +153,13 @@ class MediaItem(BaseModel):
     access_view_status: str | None = None
     epub_available: bool | None = None
     pdf_available: bool | None = None
+
+
+class ItemsListResponse(BaseModel):
+    results: list[MediaItem]
+    total: int = Field(ge=0)
+    limit: int = Field(ge=1)
+    skip: int = Field(ge=0)
 
 
 class MediaItemCreate(BaseModel):
