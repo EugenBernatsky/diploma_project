@@ -111,8 +111,8 @@ async def notify_reply_to_comment(
     await create_notification(
         user_id=recipient_user_id,
         notification_type="reply_to_comment",
-        title="Нова відповідь на ваш коментар",
-        message=f"{replier_username} відповів(ла) на ваш коментар до айтема '{item_title}'",
+        title="New reply to your comment",
+        message=f"{replier_username} replied to your comment on '{item_title}'",
         item_id=item_id,
         comment_id=reply_comment_id,
     )
@@ -124,13 +124,13 @@ async def notify_comment_deleted_by_admin(
     item_title: str | None,
     deleted_comment_id: str,
 ) -> None:
-    title_suffix = f" до айтема '{item_title}'" if item_title else ""
+    title_suffix = f" on '{item_title}'" if item_title else ""
 
     await create_notification(
         user_id=recipient_user_id,
         notification_type="comment_deleted_by_admin",
-        title="Ваш коментар було видалено",
-        message=f"Адміністратор видалив ваш коментар{title_suffix}",
+        title="Your comment was deleted",
+        message=f"An administrator deleted your comment{title_suffix}",
         item_id=item_id,
         comment_id=deleted_comment_id,
     )
@@ -146,8 +146,8 @@ async def notify_reply_to_forum_thread(
     await create_notification(
         user_id=recipient_user_id,
         notification_type="reply_to_forum_thread",
-        title="Нова відповідь у вашій гілці",
-        message=f"{replier_username} написав(ла) новий пост у вашій гілці '{thread_title}'",
+        title="New reply in your thread",
+        message=f"{replier_username} wrote a new post in your thread '{thread_title}'",
         thread_id=thread_id,
         post_id=post_id,
     )
@@ -163,8 +163,8 @@ async def notify_reply_to_forum_post(
     await create_notification(
         user_id=recipient_user_id,
         notification_type="reply_to_forum_post",
-        title="Нова відповідь на ваш пост",
-        message=f"{replier_username} відповів(ла) на ваш пост у гілці '{thread_title}'",
+        title="New reply to your post",
+        message=f"{replier_username} replied to your post in '{thread_title}'",
         thread_id=thread_id,
         post_id=post_id,
     )
@@ -178,8 +178,8 @@ async def notify_forum_thread_deleted_by_admin(
     await create_notification(
         user_id=recipient_user_id,
         notification_type="forum_thread_deleted_by_admin",
-        title="Вашу гілку було видалено",
-        message=f"Адміністратор видалив вашу гілку '{thread_title}'",
+        title="Your thread was deleted",
+        message=f"An administrator deleted your thread '{thread_title}'",
         thread_id=thread_id,
     )
 
@@ -196,8 +196,8 @@ async def notify_forum_post_deleted_by_admin(
     await create_notification(
         user_id=recipient_user_id,
         notification_type="forum_post_deleted_by_admin",
-        title="Ваш пост було видалено",
-        message=f"Адміністратор видалив ваш пост у гілці '{thread_title}'.{reason_suffix}".strip(),
+        title="Your post was deleted",
+        message=f"An administrator deleted your post in '{thread_title}'.{reason_suffix}".strip(),
         thread_id=thread_id,
         post_id=post_id,
     )

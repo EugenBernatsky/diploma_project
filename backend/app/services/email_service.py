@@ -29,29 +29,29 @@ async def send_email_verification_code(
     safe_username = html.escape(username)
     safe_code = html.escape(code)
 
-    subject = "Підтвердження email у MediaCompass"
+    subject = "MediaCompass email verification"
 
     html_content = f"""
     <html>
       <body style="font-family: Arial, sans-serif; line-height: 1.5;">
-        <h2>Підтвердження email</h2>
-        <p>Привіт, <strong>{safe_username}</strong>!</p>
-        <p>Твій код підтвердження:</p>
+        <h2>Email verification</h2>
+        <p>Hi, <strong>{safe_username}</strong>!</p>
+        <p>Your verification code:</p>
         <p style="font-size: 24px; font-weight: bold; letter-spacing: 4px;">
           {safe_code}
         </p>
-        <p>Код дійсний протягом {settings.EMAIL_VERIFICATION_CODE_EXPIRE_MINUTES} хвилин.</p>
-        <p>Якщо ти не створював акаунт у MediaCompass, просто ігноруй цей лист.</p>
+        <p>The code is valid for {settings.EMAIL_VERIFICATION_CODE_EXPIRE_MINUTES} minutes.</p>
+        <p>If you did not create a MediaCompass account, you can ignore this email.</p>
       </body>
     </html>
     """
 
     text_content = (
-        f"Привіт, {username}!\n\n"
-        f"Твій код підтвердження email у MediaCompass: {code}\n\n"
-        f"Код дійсний протягом "
-        f"{settings.EMAIL_VERIFICATION_CODE_EXPIRE_MINUTES} хвилин.\n\n"
-        "Якщо ти не створював акаунт у MediaCompass, просто ігноруй цей лист."
+        f"Hi, {username}!\n\n"
+        f"Your MediaCompass email verification code: {code}\n\n"
+        f"The code is valid for "
+        f"{settings.EMAIL_VERIFICATION_CODE_EXPIRE_MINUTES} minutes.\n\n"
+        "If you did not create a MediaCompass account, you can ignore this email."
     )
 
     payload = {

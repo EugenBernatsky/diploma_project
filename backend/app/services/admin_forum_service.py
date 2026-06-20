@@ -143,7 +143,7 @@ async def admin_delete_thread(current_admin: UserPublic, thread_id: str) -> Foru
             thread_id=thread_id,
             thread_title=thread_title,
             post_id=str(post_doc["_id"]),
-            reason="Пост було видалено разом із усією гілкою.",
+            reason="The post was deleted together with the entire thread.",
         )
         notified_users.add(post_owner_id)
 
@@ -157,7 +157,7 @@ async def admin_delete_post(current_admin: UserPublic, post_id: str) -> ForumAct
         raise HTTPException(status_code=404, detail="Post not found")
 
     thread = await find_thread_by_id(str(post["thread_id"]))
-    thread_title = thread["title"] if thread is not None else "Без назви"
+    thread_title = thread["title"] if thread is not None else "Untitled"
 
     post_tree_docs = await find_post_tree_docs(post_id)
     post_tree_ids = [str(doc["_id"]) for doc in post_tree_docs]
